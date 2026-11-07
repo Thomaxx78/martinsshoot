@@ -1,0 +1,124 @@
+import { REVIEW_MESSAGES } from "../../data/translations";
+import { contributionStats, revenue, today } from "../../lib/stats";
+import { emailLink, phoneLink } from "../../lib/shoots";
+
+export default function Home({ database, updateDatabase, onNewShoot }) {
+  const { shoots, settings } = database;
+  const stats = contributionStats(shoots);
+  const currentDate = today();
+  const weekAgo = new Date();
+  weekAgo.setDate(weekAgo.getDate() - 7);
+  const weekDate = `${weekAgo.getFullYear()}-${String(weekAgo.getMonth() + 1).padStart(2, "0")}-${String(weekAgo.getDate()).padStart(2, "0")}`;
+  const month = currentDate.slice(0, 7);
+  const summary = [
+    ["Today", revenue(shoots, (shoot) => shoot.date === currentDate)],
+    ["This week", revenue(shoots, (shoot) => shoot.date >= weekDate)],
+    ["This month", revenue(shoots, (shoot) => shoot.date?.startsWith(month))],
+    ["All time", revenue(shoots)],
+  ];
+  const due = shoots.filter(
+    (shoot) =>
+      shoot.reviewDue && !shoot.reviewSent && Date.now() >= shoot.reviewDue,
+  );
+  const markReviewSent = (id) =>
+    updateDatabase((next) => {
+      const shoot = next.shoots.find((item) => item.id === id);
+      if (shoot) shoot.reviewSent = true;
+    });
+
+  return (
+    <>
+      <button className="b" onClick={onNewShoot}>
+        New photo shoot
+      </button>
+      <div className="g2">
+        {summary.map(([label, amount]) => (
+          <div className="k" key={label}>
+            <div className="st">
+              {settings.cur}
+              {amount}
+            </div>
+            {label}
+          </div>
+        ))}
+        <div className="k">
+          <div className="st">
+            {stats ? `${settings.cur}${stats.average.toFixed(2)}` : "—"}
+          </div>
+          Average contribution
+        </div>
+        <div className="k">
+          <div className="st">
+            {stats ? `${settings.cur}${stats.median.toFixed(2)}` : "—"}
+          </div>
+          Median contribution
+        </div>
+        <div className="k">
+          <div className="st">{shoots.length}</div>Shoots
+        </div>
+        <div className="k">
+          <div className="st">
+            {shoots.reduce(
+              (sum, shoot) => sum + (Number(shoot.photos) || 0),
+              0,
+            )}
+          </div>
+          Photos recorded
+        </div>
+      </div>
+      {due.length > 0 && (
+        <>
+          <h3>Review requests due</h3>
+          {due.map((shoot) => {
+            const message = `${REVIEW_MESSAGES[shoot.lang] || REVIEW_MESSAGES.en}${settings.review}`;
+            return (
+              <div className="k" key={shoot.id}>
+                {shoot.name}
+                <br />
+                {shoot.phone && (
+                  <a
+                    className="b sm"
+                    target="_blank"
+                    rel="noreferrer"
+                    href={phoneLink(shoot.phone, message)}
+                    onClick={() => markReviewSent(shoot.id)}
+                  >
+                    WhatsApp
+                  </a>
+                )}
+                {shoot.email && (
+                  <a
+                    className="b sm s"
+                    href={emailLink(shoot.email, "Review", message)}
+                    onClick={() => markReviewSent(shoot.id)}
+                  >
+                    Email
+                  </a>
+                )}
+              </div>
+            );
+          })}
+        </>
+      )}
+      <h3>Recent activity</h3>
+      {shoots.length ? (
+        shoots
+          .slice(-5)
+          .reverse()
+          .map((shoot) => (
+            <div className="row" key={shoot.id}>
+              <span>
+                {shoot.name} · {shoot.date}
+              </span>
+              <b>
+                {settings.cur}
+                {shoot.amount || 0}
+              </b>
+            </div>
+          ))
+      ) : (
+        <p className="mu">No shoots yet. Start one above or add past shoots.</p>
+      )}
+    </>
+  );
+}
