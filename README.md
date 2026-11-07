@@ -13,6 +13,8 @@ npm run dev
 
 Ouvrir l’adresse indiquée par Vite (en général `http://localhost:5173`). Le code PIN initial est `1234` ; il se modifie dans **Settings**.
 
+Sur téléphone, l’écran de verrouillage utilise un pavé numérique tactile et valide automatiquement un code de 4 à 8 chiffres. Le clavier physique fonctionne aussi. Un ancien code non numérique peut encore être saisi dans le champ de compatibilité, puis remplacé dans **Settings**.
+
 ```bash
 npm run build   # vérifie et produit dist/
 npm run preview # prévisualise le build
@@ -40,4 +42,5 @@ npm run check   # vérifie le formatage et la compilation
 ## Repères pour les prochaines modifications
 
 Les données métier gardent le format `settings` + `shoots` de l’ancienne version. Ajouter un champ avec une valeur par défaut dans `src/lib/storage.js`, puis adapter les composants concernés. Les statistiques doivent rester des calculs dérivés des séances. Le parcours client est dans `ShootFlow.jsx` ; l’administration dans `Dashboard.jsx` et `Insights.jsx`. L’ancien HTML n’est pas chargé par l’application.
+
 # martinsshoot

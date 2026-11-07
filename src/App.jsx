@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import PinLock from "./features/auth/PinLock";
 import Dashboard from "./features/admin/Dashboard";
 import ShootFlow from "./features/shoot/ShootFlow";
 import { loadDatabase, saveDatabase } from "./lib/storage";
@@ -7,7 +8,6 @@ export default function App() {
   const [database, setDatabase] = useState(loadDatabase);
   const databaseRef = useRef(database);
   const [screen, setScreen] = useState("lock");
-  const [pin, setPin] = useState("");
   const [error, setError] = useState("");
 
   function updateDatabase(change) {
@@ -29,33 +29,13 @@ export default function App() {
 
   if (screen === "lock") {
     return (
-      <main className="w c lock-screen">
-        <h1>Enter PIN</h1>
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (pin === database.settings.pin) {
-              setScreen("dashboard");
-              setError("");
-              setPin("");
-            } else setError("Wrong PIN.");
-          }}
-        >
-          <input
-            aria-label="PIN"
-            type="password"
-            inputMode="numeric"
-            value={pin}
-            onChange={(event) => setPin(event.target.value)}
-            autoFocus
-          />
-          <button className="b">Unlock</button>
-        </form>
-        <p role="alert" className="mu">
-          {error}
-        </p>
-        <p className="mu small">Default PIN: 1234 — change it in Settings.</p>
-      </main>
+      <PinLock
+        expectedPin={database.settings.pin}
+        onUnlock={() => {
+          setScreen("dashboard");
+          setError("");
+        }}
+      />
     );
   }
 

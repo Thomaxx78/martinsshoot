@@ -1,0 +1,202 @@
+.pin-lock {
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: max(24px, env(safe-area-inset-top)) 18px
+    max(24px, env(safe-area-inset-bottom));
+  text-align: center;
+}
+
+.pin-lock__content {
+  width: min(100%, 340px);
+}
+
+.pin-lock__heading {
+  margin-bottom: 28px;
+}
+
+.pin-lock__eyebrow {
+  display: block;
+  margin-bottom: 18px;
+  color: var(--ac);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+}
+
+.pin-lock__heading h1 {
+  margin-bottom: 6px;
+}
+
+.pin-lock__heading p {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.pin-dots {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  min-height: 20px;
+}
+
+.pin-dot {
+  width: 15px;
+  height: 15px;
+  border: 1.5px solid var(--ac);
+  border-radius: 50%;
+  transition:
+    background-color 140ms ease,
+    transform 140ms ease;
+}
+
+.pin-dot--filled {
+  background: var(--ac);
+  transform: scale(1.06);
+}
+
+.pin-dots--wrong {
+  animation: pin-shake 320ms ease;
+}
+
+.pin-dots--wrong .pin-dot {
+  border-color: #9e5348;
+  background: #9e5348;
+}
+
+.pin-feedback {
+  height: 24px;
+  margin: 10px 0 24px;
+  color: #9e5348;
+  font-size: 0.85rem;
+}
+
+.pin-keypad {
+  width: min(100%, 284px);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  justify-items: center;
+  gap: 14px 12px;
+}
+
+.pin-key,
+.pin-delete {
+  width: 70px;
+  height: 70px;
+  border: 0;
+  border-radius: 50%;
+  color: var(--tx);
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.pin-key {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--ac2);
+  transition:
+    background-color 120ms ease,
+    transform 120ms ease;
+}
+
+.pin-key:active {
+  background: #cedfd2;
+  transform: scale(0.94);
+}
+
+.pin-key__digit {
+  font:
+    400 2rem/1 Inter,
+    system-ui,
+    sans-serif;
+}
+
+.pin-key__letters {
+  margin-top: 4px;
+  font:
+    600 0.55rem/1 Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.12em;
+}
+
+.pin-delete {
+  display: grid;
+  place-items: center;
+  background: transparent;
+  color: var(--ac);
+}
+
+.pin-delete svg {
+  width: 28px;
+  height: 22px;
+}
+
+.pin-delete:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.pin-key:focus-visible,
+.pin-delete:focus-visible {
+  outline: 3px solid var(--ac);
+  outline-offset: 3px;
+}
+
+.pin-lock--legacy {
+  display: block;
+  padding-top: 20vh;
+}
+
+.pin-lock--legacy form {
+  max-width: 340px;
+  margin: 0 auto;
+}
+
+@keyframes pin-shake {
+  25% {
+    transform: translateX(-7px);
+  }
+  50% {
+    transform: translateX(7px);
+  }
+  75% {
+    transform: translateX(-4px);
+  }
+}
+
+@media (max-height: 620px) {
+  .pin-lock__heading {
+    margin-bottom: 16px;
+  }
+  .pin-lock__eyebrow {
+    margin-bottom: 10px;
+  }
+  .pin-feedback {
+    margin-bottom: 10px;
+  }
+  .pin-keypad {
+    gap: 9px 12px;
+  }
+  .pin-key,
+  .pin-delete {
+    width: 61px;
+    height: 61px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pin-dot,
+  .pin-key {
+    transition: none;
+  }
+  .pin-dots--wrong {
+    animation: none;
+  }
+}

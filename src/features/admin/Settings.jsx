@@ -15,7 +15,7 @@ export default function Settings({ settings, updateDatabase, onLock }) {
   function save(event) {
     event.preventDefault();
     const saved = updateDatabase((next) => {
-      next.settings = { ...form, pin: form.pin || "1234" };
+      next.settings = { ...form };
     });
     if (saved) setMessage("Saved.");
   }
@@ -105,8 +105,13 @@ export default function Settings({ settings, updateDatabase, onLock }) {
             </select>
           </label>
           <Field
-            label="Admin PIN"
+            label="Admin PIN (4–8 digits)"
+            type="text"
             inputMode="numeric"
+            pattern="[0-9]{4,8}"
+            minLength={4}
+            maxLength={8}
+            required
             value={form.pin}
             onChange={(event) => set("pin", event.target.value)}
           />
