@@ -77,6 +77,7 @@ export default function Customers({ database, updateDatabase }) {
         message.subject,
         message.text,
         martinGoogleEmail,
+        message.html,
       );
       const saved = updateDatabase((next) => {
         const item = next.shoots.find((value) => value.id === shoot.id);

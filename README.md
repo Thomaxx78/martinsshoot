@@ -57,6 +57,8 @@ L’envoi utilise le compte Gmail de Martin (`noplanphotography@gmail.com`), san
 
 Quand le lien Drive est prêt, l’app envoie l’e-mail directement depuis Gmail, sans ouvrir une autre application. L’état de l’envoi apparaît dans **Customers**. En cas d’erreur ou de doute sur la réponse réseau, l’envoi manuel reste disponible dans le parcours client. Le navigateur doit rester ouvert jusqu’à la fin de l’envoi ; cette version n’a pas de file d’attente persistante.
 
+L’e-mail envoyé contient une version HTML aux couleurs du site et une version texte de secours. Le message personnalisé dans **Settings** est conservé dans les deux versions, avec un bouton vers le dossier Drive et un lien vers [@martin_flhl](https://www.instagram.com/martin_flhl/).
+
 Dans **Customers**, le bouton **Send email via Gmail** permet de renvoyer le lien d’un shooting déjà créé après avoir connecté le compte de Martin. L’app affiche l’erreur exacte si Gmail refuse l’envoi. L’état **sent** signifie que Gmail a accepté le message, pas que le destinataire l’a reçu ; vérifier l’adresse, les spams et le dossier **Envoyés** de Martin si le message n’arrive pas.
 
 ```bash

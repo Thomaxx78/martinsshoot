@@ -7,7 +7,15 @@ function base64(bytes) {
   return btoa(binary);
 }
 
-export function encodeGmailMessage(to, subject, text, from = "") {
+function encodedBody(value) {
+  return (
+    base64(new TextEncoder().encode(value))
+      .match(/.{1,76}/g)
+      ?.join("\r\n") || ""
+  );
+}
+
+export function encodeGmailMessage(to, subject, text, from = "", html = "") {
   if (to.length > 254 || !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(to)) {
     throw new Error("The customer email address is invalid.");
   }
@@ -19,34 +27,64 @@ export function encodeGmailMessage(to, subject, text, from = "") {
   const encoder = new TextEncoder();
   const cleanSubject = subject.replace(/[\r\n]/g, " ");
   const encodedSubject = base64(encoder.encode(cleanSubject));
-  const encodedBody =
-    base64(encoder.encode(text))
-      .match(/.{1,76}/g)
-      ?.join("\r\n") || "";
-  const message = [
+  const headers = [
     ...(from ? [`From: ${from}`] : []),
     `To: ${to}`,
     `Subject: =?UTF-8?B?${encodedSubject}?=`,
     "MIME-Version: 1.0",
-    "Content-Type: text/plain; charset=UTF-8",
-    "Content-Transfer-Encoding: base64",
-    "",
-    encodedBody,
-  ].join("\r\n");
+  ];
+  let message;
+  if (html) {
+    const boundary = `shoot-martin-${crypto.randomUUID()}`;
+    message = [
+      ...headers,
+      `Content-Type: multipart/alternative; boundary="${boundary}"`,
+      "",
+      `--${boundary}`,
+      "Content-Type: text/plain; charset=UTF-8",
+      "Content-Transfer-Encoding: base64",
+      "",
+      encodedBody(text),
+      `--${boundary}`,
+      "Content-Type: text/html; charset=UTF-8",
+      "Content-Transfer-Encoding: base64",
+      "",
+      encodedBody(html),
+      `--${boundary}--`,
+      "",
+    ].join("\r\n");
+  } else {
+    message = [
+      ...headers,
+      "Content-Type: text/plain; charset=UTF-8",
+      "Content-Transfer-Encoding: base64",
+      "",
+      encodedBody(text),
+    ].join("\r\n");
+  }
   return base64(encoder.encode(message))
     .replaceAll("+", "-")
     .replaceAll("/", "_")
     .replace(/=+$/, "");
 }
 
-export async function sendGmailMessage(token, to, subject, text, from = "") {
+export async function sendGmailMessage(
+  token,
+  to,
+  subject,
+  text,
+  from = "",
+  html = "",
+) {
   const response = await fetch(GMAIL_SEND, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ raw: encodeGmailMessage(to, subject, text, from) }),
+    body: JSON.stringify({
+      raw: encodeGmailMessage(to, subject, text, from, html),
+    }),
   });
   if (!response.ok) {
     let detail = "";
