@@ -25,12 +25,12 @@ Une session persistante est disponible sur Vercel après configuration des varia
 
 Dans **Vercel > projet martinsshoot > Settings > Environment Variables**, ajouter pour l’environnement **Production** :
 
-| Nom                     | Valeur                                                                                                   |
-| ----------------------- | -------------------------------------------------------------------------------------------------------- |
-| `GOOGLE_CLIENT_ID`      | Le même Client ID public que dans `.env.production`                                                      |
-| `GOOGLE_CLIENT_SECRET`  | Le **Client secret** du client OAuth Web, visible dans **Google Cloud > Google Auth platform > Clients** |
-| `GOOGLE_SESSION_SECRET` | Résultat de `openssl rand -base64 32` exécuté localement ; garder cette valeur privée                    |
-| `MARTIN_GOOGLE_EMAIL`   | `noplanphotography@gmail.com`                                                                            |
+| Nom                     | Valeur                                                                                                                                                                                                                                        |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GOOGLE_CLIENT_ID`      | Le même Client ID public que dans `.env.production`                                                                                                                                                                                           |
+| `GOOGLE_CLIENT_SECRET`  | Le **Client secret** du client OAuth Web dans **Google Cloud > Google Auth platform > Clients**. Si tu ne l’as pas sauvegardé, ouvre le client, clique **Add Secret** et copie aussitôt la nouvelle valeur ; Google ne l’affiche qu’une fois. |
+| `GOOGLE_SESSION_SECRET` | Résultat de `openssl rand -base64 32` exécuté localement ; garder cette valeur privée                                                                                                                                                         |
+| `MARTIN_GOOGLE_EMAIL`   | `noplanphotography@gmail.com`                                                                                                                                                                                                                 |
 
 Ne jamais mettre le secret OAuth ou le secret de session dans une variable `VITE_`, dans le dépôt ou dans le chat. Redéployer le projet après avoir ajouté les variables. Martin touchera ensuite **Connect Google (Drive + Gmail)** une fois sur son téléphone. Le client OAuth Web existant convient ; le parcours Google par fenêtre utilise l’origine autorisée `https://martinsshoot.vercel.app` comme URI de redirection. Le site fonctionne encore avec les boutons Drive et Gmail séparés tant que ces variables manquent. En développement avec Vite seul, la session serveur n’est pas disponible ; utiliser `vercel dev` pour la tester localement.
 
