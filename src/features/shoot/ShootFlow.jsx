@@ -1,9 +1,27 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import QRCode from "qrcode";
 import { COUNTRIES } from "../../data/countries";
 import { TRANSLATIONS } from "../../data/translations";
 import { contributionStats, today } from "../../lib/stats";
-import { emailLink, languageFor, phoneLink } from "../../lib/shoots";
+import {
+  emailLink,
+  languageFor,
+  nextShootReference,
+  phoneLink,
+} from "../../lib/shoots";
+import {
+  connectGoogleDrive,
+  getDriveAccessToken,
+  googleClientId,
+  hasDriveAccess,
+  loadGoogleIdentity,
+} from "../../lib/googleDriveAuth";
+import {
+  createShootFolder,
+  getDriveAccount,
+  shareShootFolder,
+  uploadShootPhoto,
+} from "../../lib/googleDrive";
 import { Histogram } from "../admin/Insights";
 
 const emptyCustomer = {
@@ -26,6 +44,18 @@ export default function ShootFlow({ settings, shoots, onSave, onExit }) {
   const [showGuide, setShowGuide] = useState(false);
   const [showQr, setShowQr] = useState(false);
   const [qrImage, setQrImage] = useState("");
+  const [driveReady, setDriveReady] = useState(false);
+  const [driveConnected, setDriveConnected] = useState(hasDriveAccess);
+  const [driveAccount, setDriveAccount] = useState("");
+  const [driveConnecting, setDriveConnecting] = useState(false);
+  const [driveMode, setDriveMode] = useState("auto");
+  const [draft, setDraft] = useState(null);
+  const [uploadProgress, setUploadProgress] = useState({ file: 0, bytes: 0 });
+  const draftRef = useRef(null);
+  const folderIdRef = useRef("");
+  const uploadedRef = useRef(new Set());
+  const uploadSessionsRef = useRef(new Map());
+  const uploadingRef = useRef(false);
   const translation = TRANSLATIONS[language] || TRANSLATIONS.en;
   const stats = contributionStats(shoots);
   const currency = settings.cur;
@@ -66,6 +96,99 @@ export default function ShootFlow({ settings, shoots, onSave, onExit }) {
     document.body.classList.toggle("gallery-screen", step === "gallery");
     return () => document.body.classList.remove("gallery-screen");
   }, [step]);
+  useEffect(() => {
+    if (!googleClientId) return;
+    let active = true;
+    loadGoogleIdentity()
+      .then(async () => {
+        if (!active) return;
+        setDriveReady(true);
+        if (hasDriveAccess()) {
+          const email = await getDriveAccount(getDriveAccessToken());
+          if (active) setDriveAccount(email);
+        }
+      })
+      .catch((problem) => {
+        if (active) {
+          setDriveConnected(false);
+          setError(problem.message);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  async function connectDrive() {
+    setDriveConnecting(true);
+    setError("");
+    try {
+      await connectGoogleDrive();
+      const email = await getDriveAccount(getDriveAccessToken());
+      setDriveAccount(email);
+      setDriveConnected(true);
+    } catch (problem) {
+      setDriveConnected(false);
+      setError(problem.message);
+    } finally {
+      setDriveConnecting(false);
+    }
+  }
+
+  function saveDraft(patch) {
+    const next = { ...draftRef.current, ...patch };
+    if (!onSave(next))
+      throw new Error("The shoot could not be saved on this phone.");
+    draftRef.current = next;
+    setDraft(next);
+  }
+
+  async function uploadToDrive() {
+    if (uploadingRef.current) return;
+    uploadingRef.current = true;
+    setStep("upload");
+    setError("");
+    try {
+      const token = getDriveAccessToken();
+      let folderId = folderIdRef.current;
+      if (!folderId) {
+        folderId = await createShootFolder(token, draftRef.current.folder);
+        folderIdRef.current = folderId;
+        saveDraft({ driveFolderId: folderId, uploadStatus: "uploading" });
+      }
+      for (let index = 0; index < photos.length; index++) {
+        if (uploadedRef.current.has(index)) continue;
+        setUploadProgress({ file: index + 1, bytes: 0 });
+        const session = uploadSessionsRef.current.get(index) || { url: "" };
+        uploadSessionsRef.current.set(index, session);
+        await uploadShootPhoto(
+          token,
+          folderId,
+          photos[index],
+          session,
+          (bytes) => {
+            setUploadProgress({ file: index + 1, bytes });
+          },
+        );
+        uploadedRef.current.add(index);
+        saveDraft({ uploadedPhotos: uploadedRef.current.size });
+      }
+      const link = await shareShootFolder(token, folderId);
+      saveDraft({ link, uploadStatus: "ready" });
+      setCustomer((previous) => ({ ...previous, link }));
+      setStep("gallery");
+    } catch (problem) {
+      if (problem.status === 401 || !hasDriveAccess()) setDriveConnected(false);
+      try {
+        saveDraft({ uploadStatus: "failed" });
+      } catch {
+        /* App shows storage errors. */
+      }
+      setError(problem.message || "Google Drive upload failed. Please retry.");
+    } finally {
+      uploadingRef.current = false;
+    }
+  }
 
   function selectPhotos(event) {
     setPhotos(Array.from(event.target.files || []));
@@ -81,12 +204,9 @@ export default function ShootFlow({ settings, shoots, onSave, onExit }) {
       return;
     }
     setError("");
-    setStep("gallery");
-  }
-  function finish(method = customer.method) {
     const date = today();
-    const ref = `REF-${String(shoots.length + 1).padStart(6, "0")}`;
-    const saved = onSave({
+    const ref = nextShootReference(shoots);
+    const shoot = {
       id: crypto.randomUUID(),
       ref,
       date,
@@ -97,15 +217,39 @@ export default function ShootFlow({ settings, shoots, onSave, onExit }) {
       lang: languageFor(customer.country.trim()),
       perm: customer.perm,
       photos: photos.length,
-      link: customer.link.trim(),
+      link: driveMode === "auto" ? "" : customer.link.trim(),
       folder: `${customer.name.trim()} – ${date} – ${ref}`,
+      driveFolderId: "",
+      uploadedPhotos: 0,
+      uploadStatus: driveMode === "auto" ? "creating" : "skipped",
+      amount: 0,
+      method: "",
+      status: "pending",
+    };
+    if (!onSave(shoot)) {
+      setError("The shoot could not be saved on this phone.");
+      return;
+    }
+    draftRef.current = shoot;
+    setDraft(shoot);
+    if (driveMode === "auto") void uploadToDrive();
+    else setStep("gallery");
+  }
+  function finish(method = customer.method) {
+    if (!draftRef.current) return;
+    const next = {
+      ...draftRef.current,
       amount: Number(customer.amount),
       method,
       status: method === "cash" ? "cash due" : "paid",
       reviewDue: Date.now() + 20 * 60_000,
       reviewSent: false,
-    });
-    if (saved) setStep("end");
+    };
+    if (onSave(next)) {
+      draftRef.current = next;
+      setDraft(next);
+      setStep("end");
+    }
   }
 
   const languages = (
@@ -141,31 +285,57 @@ export default function ShootFlow({ settings, shoots, onSave, onExit }) {
         <p className="mu">
           {photos.length ? `${photos.length} selected` : "No photos selected"}
         </p>
-        <label>
-          Real Google Drive share link (optional)
-          <input
-            type="url"
-            placeholder="https://drive.google.com/drive/folders/…"
-            value={customer.link}
-            onChange={(event) => set("link", event.target.value)}
-          />
-        </label>
-        <p className="mu small">
-          Photos stay on this device. To send them later, upload them to Drive
-          yourself and paste the actual share link here.
-        </p>
+        <div className="k">
+          <h3>Google Drive</h3>
+          {googleClientId ? (
+            <>
+              <p className="mu">
+                {driveConnected && hasDriveAccess()
+                  ? `Connected: ${driveAccount || "Google Drive"}. The folder and photos will be uploaded after the customer form.`
+                  : driveReady
+                    ? "Connect Martin’s Google account before handing over the phone."
+                    : "Loading Google sign-in…"}
+              </p>
+              <button
+                className="b s"
+                disabled={!driveReady || driveConnecting}
+                onClick={connectDrive}
+              >
+                {driveConnecting
+                  ? "Connecting…"
+                  : driveConnected && hasDriveAccess()
+                    ? "Reconnect Google Drive"
+                    : "Connect Google Drive"}
+              </button>
+            </>
+          ) : (
+            <p className="mu">
+              Google Drive setup is missing. Add the OAuth Client ID described
+              in the README before using automatic upload.
+            </p>
+          )}
+        </div>
         <button
           className="b"
+          disabled={!driveConnected || !hasDriveAccess() || !photos.length}
           onClick={() => {
-            if (!photos.length) {
-              setError("Select photos first.");
-              return;
-            }
+            setDriveMode("auto");
             setError("");
             setStep("intro");
           }}
         >
           Hand to customer
+        </button>
+        <button
+          className="b g"
+          disabled={!photos.length}
+          onClick={() => {
+            setDriveMode("offline");
+            setError("");
+            setStep("intro");
+          }}
+        >
+          Continue without Drive
         </button>
         {error && (
           <p className="mu" role="alert">
@@ -177,6 +347,55 @@ export default function ShootFlow({ settings, shoots, onSave, onExit }) {
         </button>
       </div>
     );
+
+  if (step === "upload") {
+    const current = photos[uploadProgress.file - 1];
+    const percent = current
+      ? Math.min(100, Math.round((uploadProgress.bytes / current.size) * 100))
+      : 0;
+    return (
+      <div className="fade upload-screen" aria-live="polite">
+        <h2>Preparing your photos</h2>
+        <p className="mu">{draft?.folder}</p>
+        {uploadingRef.current ? (
+          <>
+            <p>
+              {uploadProgress.file
+                ? `Uploading photo ${uploadProgress.file} of ${photos.length} · ${percent}%`
+                : "Creating your Google Drive folder…"}
+            </p>
+            <progress
+              max="100"
+              value={percent}
+              aria-label="Photo upload progress"
+            />
+            <p className="mu small">
+              Keep this page open until the photos are ready.
+            </p>
+          </>
+        ) : (
+          <>
+            <p role="alert">{error || "Upload paused."}</p>
+            <p className="mu small">
+              The existing folder and completed photos will be reused.
+            </p>
+            <button className="b" onClick={() => void uploadToDrive()}>
+              Retry upload
+            </button>
+            {googleClientId && (
+              <button
+                className="b s"
+                disabled={!driveReady || driveConnecting}
+                onClick={connectDrive}
+              >
+                {driveConnecting ? "Connecting…" : "Reconnect Drive (Martin)"}
+              </button>
+            )}
+          </>
+        )}
+      </div>
+    );
+  }
 
   if (step === "intro")
     return (

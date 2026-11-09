@@ -57,7 +57,15 @@ export default function App() {
         <ShootFlow
           settings={database.settings}
           shoots={database.shoots}
-          onSave={(shoot) => updateDatabase((next) => next.shoots.push(shoot))}
+          onSave={(shoot) =>
+            updateDatabase((next) => {
+              const index = next.shoots.findIndex(
+                (item) => item.id === shoot.id,
+              );
+              if (index === -1) next.shoots.push(shoot);
+              else next.shoots[index] = shoot;
+            })
+          }
           onExit={() => setScreen("dashboard")}
         />
       )}

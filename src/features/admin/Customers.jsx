@@ -151,6 +151,22 @@ export default function Customers({ database, updateDatabase }) {
                 Drive folder
               </a>
             )}
+            {shoot.driveFolderId && !shoot.link && (
+              <a
+                href={`https://drive.google.com/drive/folders/${encodeURIComponent(shoot.driveFolderId)}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Drive folder (private)
+              </a>
+            )}
+            {shoot.uploadStatus &&
+              !["ready", "skipped"].includes(shoot.uploadStatus) && (
+                <p className="mu small">
+                  Drive upload: {shoot.uploadStatus} ·{" "}
+                  {shoot.uploadedPhotos || 0}/{shoot.photos || 0} photos
+                </p>
+              )}
             {shoot.status !== "paid" && (
               <button
                 className="b sm s"

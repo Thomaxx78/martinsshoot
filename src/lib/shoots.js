@@ -1,9 +1,17 @@
-import { FRENCH_COUNTRIES, SPANISH_COUNTRIES } from "../data/countries";
+import { FRENCH_COUNTRIES, SPANISH_COUNTRIES } from "../data/countries.js";
 
 export function languageFor(country) {
   if (FRENCH_COUNTRIES.includes(country)) return "fr";
   if (SPANISH_COUNTRIES.includes(country)) return "es";
   return "en";
+}
+
+export function nextShootReference(shoots) {
+  const last = shoots.reduce((highest, shoot) => {
+    const match = /^REF-(\d+)$/.exec(shoot.ref || "");
+    return match ? Math.max(highest, Number(match[1])) : highest;
+  }, 0);
+  return `REF-${String(last + 1).padStart(6, "0")}`;
 }
 
 export function exportCsv(shoots) {
@@ -19,6 +27,9 @@ export function exportCsv(shoots) {
     "status",
     "photos",
     "link",
+    "driveFolderId",
+    "uploadStatus",
+    "uploadedPhotos",
     "notes",
   ];
   const rows = [

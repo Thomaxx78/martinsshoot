@@ -24,8 +24,12 @@ export default function Settings({ settings, updateDatabase, onLock }) {
       <form onSubmit={save}>
         <div className="k">
           <h3>Google Drive</h3>
+          <p className="mu small">
+            Connect your Google account from New photo shoot before handing over
+            the phone.
+          </p>
           <Field
-            label="Account label (informational)"
+            label="Account label (optional; does not connect Drive)"
             value={form.drive}
             onChange={(event) => set("drive", event.target.value)}
           />

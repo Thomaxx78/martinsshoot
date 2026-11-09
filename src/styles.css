@@ -87,6 +87,10 @@ h3 {
   font-size: 0.85rem;
   margin: 2px;
 }
+.b:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 input,
 select,
 textarea {
@@ -319,4 +323,13 @@ label {
 .qr-preview {
   max-width: 140px;
   border-radius: 10px;
+}
+.upload-screen {
+  padding-top: 12vh;
+  text-align: center;
+}
+.upload-screen progress {
+  width: 100%;
+  height: 12px;
+  accent-color: var(--ac);
 }
