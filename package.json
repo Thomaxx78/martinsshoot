@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "check": "npm run format:check && npm test && npm run build",
-    "test": "node --test src/lib/*.test.js",
+    "test": "node --test src/lib/*.test.js server/*.test.js",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },

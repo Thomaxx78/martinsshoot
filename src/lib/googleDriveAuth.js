@@ -7,6 +7,8 @@ let accessToken = "";
 let expiresAt = 0;
 let gmailToken = "";
 let gmailExpiresAt = 0;
+let persistentSession = false;
+let sessionPromise;
 
 export const googleClientId =
   import.meta.env.VITE_GOOGLE_CLIENT_ID?.trim() || "";
@@ -45,6 +47,133 @@ export function getGmailAccessToken() {
 export function clearGmailAccess() {
   gmailToken = "";
   gmailExpiresAt = 0;
+}
+
+export function hasPersistentSession() {
+  return persistentSession;
+}
+
+function applySession(session) {
+  if (!session.connected) return false;
+  const expiresAtValue = Date.now() + Number(session.expiresIn || 3600) * 1000;
+  accessToken = session.accessToken;
+  gmailToken = session.accessToken;
+  expiresAt = expiresAtValue;
+  gmailExpiresAt = expiresAtValue;
+  persistentSession = true;
+  return true;
+}
+
+async function sessionRequest(path, options) {
+  const response = await fetch(`/api/google/${path}`, {
+    credentials: "same-origin",
+    cache: "no-store",
+    ...options,
+  });
+  const result = await response.json();
+  if (!response.ok)
+    throw new Error(result.error || "Google connection failed.");
+  return result;
+}
+
+export function restoreGoogleSession() {
+  if (!sessionPromise) {
+    sessionPromise = sessionRequest("session")
+      .then((session) => {
+        if (!session.connected && persistentSession) {
+          persistentSession = false;
+          clearDriveAccess();
+          clearGmailAccess();
+        }
+        return { ...session, connected: applySession(session) };
+      })
+      .finally(() => {
+        sessionPromise = undefined;
+      });
+  }
+  return sessionPromise;
+}
+
+export function refreshGoogleSessionIfNeeded() {
+  if (!persistentSession || (hasDriveAccess() && hasGmailAccess()))
+    return Promise.resolve();
+  return restoreGoogleSession().then((session) => {
+    if (!session.connected) {
+      persistentSession = false;
+      clearDriveAccess();
+      clearGmailAccess();
+      throw new Error("Google session expired. Ask Martin to reconnect.");
+    }
+  });
+}
+
+export async function disconnectPersistentGoogle() {
+  await sessionRequest("disconnect", {
+    method: "POST",
+    headers: { "X-Requested-With": "XMLHttpRequest" },
+  });
+  persistentSession = false;
+  clearDriveAccess();
+  clearGmailAccess();
+}
+
+export function connectPersistentGoogle() {
+  if (!googleClientId || !window.google?.accounts?.oauth2)
+    return Promise.reject(new Error("Google sign-in is still loading."));
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const timeout = setTimeout(
+      () => fail(new Error("Google sign-in timed out. Try again.")),
+      120_000,
+    );
+    function finish(session) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      resolve(session);
+    }
+    function fail(error) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      reject(error);
+    }
+    const client = window.google.accounts.oauth2.initCodeClient({
+      client_id: googleClientId,
+      scope: `${DRIVE_SCOPE} ${GMAIL_SCOPE}`,
+      ux_mode: "popup",
+      select_account: true,
+      callback: async (response) => {
+        if (response.error || !response.code)
+          return fail(
+            new Error(
+              response.error_description || "Google authorization failed.",
+            ),
+          );
+        try {
+          const session = await sessionRequest("connect", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-Requested-With": "XMLHttpRequest",
+            },
+            body: JSON.stringify({ code: response.code }),
+          });
+          applySession(session);
+          finish(session);
+        } catch (error) {
+          fail(error);
+        }
+      },
+      error_callback: (error) =>
+        fail(new Error(error.message || "Google sign-in was closed.")),
+    });
+    try {
+      client.requestCode();
+    } catch (error) {
+      fail(error);
+    }
+  });
 }
 
 export function loadGoogleIdentity() {

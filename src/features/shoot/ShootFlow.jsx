@@ -15,13 +15,17 @@ import {
   clearGmailAccess,
   connectGmail,
   connectGoogleDrive,
+  connectPersistentGoogle,
   getDriveAccessToken,
   getGmailAccessToken,
   googleClientId,
   hasDriveAccess,
   hasGmailAccess,
+  hasPersistentSession,
   loadGoogleIdentity,
   martinGoogleEmail,
+  refreshGoogleSessionIfNeeded,
+  restoreGoogleSession,
 } from "../../lib/googleDriveAuth";
 import { deliveryEmail } from "../../lib/email";
 import { sendGmailMessage } from "../../lib/gmail";
@@ -60,6 +64,7 @@ export default function ShootFlow({ settings, shoots, onSave, onExit }) {
   const [driveConnecting, setDriveConnecting] = useState(false);
   const [gmailConnected, setGmailConnected] = useState(false);
   const [gmailConnecting, setGmailConnecting] = useState(false);
+  const [persistentAvailable, setPersistentAvailable] = useState(false);
   const [driveMode, setDriveMode] = useState("auto");
   const [draft, setDraft] = useState(null);
   const [uploadProgress, setUploadProgress] = useState({ file: 0, bytes: 0 });
@@ -112,10 +117,25 @@ export default function ShootFlow({ settings, shoots, onSave, onExit }) {
   useEffect(() => {
     if (!googleClientId) return;
     let active = true;
-    loadGoogleIdentity()
-      .then(async () => {
+    Promise.allSettled([loadGoogleIdentity(), restoreGoogleSession()]).then(
+      async ([identityResult, sessionResult]) => {
         if (!active) return;
-        setDriveReady(true);
+        const session =
+          sessionResult.status === "fulfilled"
+            ? sessionResult.value
+            : { configured: false, connected: false };
+        setDriveReady(identityResult.status === "fulfilled");
+        setPersistentAvailable(Boolean(session.configured));
+        if (session.connected) {
+          setDriveAccount(session.email);
+          setDriveConnected(true);
+          setGmailConnected(true);
+          return;
+        }
+        if (identityResult.status === "rejected") {
+          setError(identityResult.reason.message);
+          return;
+        }
         if (hasDriveAccess()) {
           try {
             const email = await getDriveAccount(getDriveAccessToken());
@@ -139,17 +159,27 @@ export default function ShootFlow({ settings, shoots, onSave, onExit }) {
             clearGmailAccess();
           }
         }
-      })
-      .catch((problem) => {
-        if (active) {
-          setDriveConnected(false);
-          setError(problem.message);
-        }
-      });
+      },
+    );
     return () => {
       active = false;
     };
   }, []);
+
+  async function connectBoth() {
+    setDriveConnecting(true);
+    setError("");
+    try {
+      const session = await connectPersistentGoogle();
+      setDriveAccount(session.email);
+      setDriveConnected(true);
+      setGmailConnected(true);
+    } catch (problem) {
+      setError(problem.message);
+    } finally {
+      setDriveConnecting(false);
+    }
+  }
 
   async function connectDrive() {
     setDriveConnecting(true);
@@ -207,6 +237,7 @@ export default function ShootFlow({ settings, shoots, onSave, onExit }) {
     emailSendingRef.current = true;
     try {
       saveDraft({ emailStatus: "sending" });
+      await refreshGoogleSessionIfNeeded();
       const message = deliveryEmail(settings, draftRef.current, link);
       const emailId = await sendGmailMessage(
         getGmailAccessToken(),
@@ -232,6 +263,7 @@ export default function ShootFlow({ settings, shoots, onSave, onExit }) {
     setStep("upload");
     setError("");
     try {
+      await refreshGoogleSessionIfNeeded();
       const token = getDriveAccessToken();
       let folderId = folderIdRef.current;
       if (!folderId) {
@@ -261,7 +293,8 @@ export default function ShootFlow({ settings, shoots, onSave, onExit }) {
       setCustomer((previous) => ({ ...previous, link }));
       setStep("gallery");
       if (draftRef.current.email) {
-        if (gmailConnected && hasGmailAccess()) void sendDeliveryEmail(link);
+        if (gmailConnected && (hasGmailAccess() || hasPersistentSession()))
+          void sendDeliveryEmail(link);
         else saveDraft({ emailStatus: "not_connected" });
       }
     } catch (problem) {
@@ -391,7 +424,28 @@ export default function ShootFlow({ settings, shoots, onSave, onExit }) {
         </p>
         <div className="k">
           <h3>Google Drive</h3>
-          {googleClientId ? (
+          {googleClientId && persistentAvailable ? (
+            <>
+              <p className="mu">
+                {driveConnected && hasDriveAccess()
+                  ? `Connected: ${driveAccount}. Drive and Gmail will reconnect automatically on this phone for about 7 days.`
+                  : driveReady
+                    ? "Connect Martin’s Google account before handing over the phone."
+                    : "Loading Google sign-in…"}
+              </p>
+              <button
+                className="b s"
+                disabled={!driveReady || driveConnecting}
+                onClick={connectBoth}
+              >
+                {driveConnecting
+                  ? "Connecting…"
+                  : driveConnected && hasDriveAccess()
+                    ? "Reconnect Google"
+                    : "Connect Google (Drive + Gmail)"}
+              </button>
+            </>
+          ) : googleClientId ? (
             <>
               <p className="mu">
                 {driveConnected && hasDriveAccess()
@@ -419,35 +473,37 @@ export default function ShootFlow({ settings, shoots, onSave, onExit }) {
             </p>
           )}
         </div>
-        <div className="k">
-          <h3>Automatic email</h3>
-          <p className="mu small">
-            {gmailConnected && hasGmailAccess()
-              ? `Gmail connected: ${driveAccount}. Customers who add an email will receive the Drive link automatically.`
-              : "Connect Martin’s Gmail to email the Drive link after upload. Drive uploads still work without it."}
-          </p>
-          <button
-            className="b s"
-            disabled={
-              !driveConnected ||
-              !hasDriveAccess() ||
-              !driveReady ||
-              gmailConnecting
-            }
-            onClick={connectMail}
-          >
-            {gmailConnecting
-              ? "Connecting…"
-              : gmailConnected && hasGmailAccess()
-                ? "Reconnect Gmail"
-                : "Connect Gmail (Martin)"}
-          </button>
-        </div>
+        {!persistentAvailable && (
+          <div className="k">
+            <h3>Automatic email</h3>
+            <p className="mu small">
+              {gmailConnected && hasGmailAccess()
+                ? `Gmail connected: ${driveAccount}. Customers who add an email will receive the Drive link automatically.`
+                : "Connect Martin’s Gmail to email the Drive link after upload. Drive uploads still work without it."}
+            </p>
+            <button
+              className="b s"
+              disabled={
+                !driveConnected ||
+                !hasDriveAccess() ||
+                !driveReady ||
+                gmailConnecting
+              }
+              onClick={connectMail}
+            >
+              {gmailConnecting
+                ? "Connecting…"
+                : gmailConnected && hasGmailAccess()
+                  ? "Reconnect Gmail"
+                  : "Connect Gmail (Martin)"}
+            </button>
+          </div>
+        )}
         <button
           className="b"
           disabled={
             !driveConnected ||
-            !hasDriveAccess() ||
+            (!hasDriveAccess() && !hasPersistentSession()) ||
             !photos.length ||
             !shootName.trim()
           }
@@ -519,9 +575,9 @@ export default function ShootFlow({ settings, shoots, onSave, onExit }) {
               <button
                 className="b s"
                 disabled={!driveReady || driveConnecting}
-                onClick={connectDrive}
+                onClick={persistentAvailable ? connectBoth : connectDrive}
               >
-                {driveConnecting ? "Connecting…" : "Reconnect Drive (Martin)"}
+                {driveConnecting ? "Connecting…" : "Reconnect Google (Martin)"}
               </button>
             )}
           </>
