@@ -1,12 +1,17 @@
 const GIS_SCRIPT = "https://accounts.google.com/gsi/client";
 const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
+const GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.send";
 
 let scriptPromise;
 let accessToken = "";
 let expiresAt = 0;
+let gmailToken = "";
+let gmailExpiresAt = 0;
 
 export const googleClientId =
   import.meta.env.VITE_GOOGLE_CLIENT_ID?.trim() || "";
+export const martinGoogleEmail =
+  import.meta.env.VITE_MARTIN_GOOGLE_EMAIL?.trim().toLowerCase() || "";
 
 export function hasDriveAccess() {
   return Boolean(accessToken && Date.now() < expiresAt - 60_000);
@@ -19,6 +24,27 @@ export function getDriveAccessToken() {
     );
   }
   return accessToken;
+}
+
+export function clearDriveAccess() {
+  accessToken = "";
+  expiresAt = 0;
+}
+
+export function hasGmailAccess() {
+  return Boolean(gmailToken && Date.now() < gmailExpiresAt - 60_000);
+}
+
+export function getGmailAccessToken() {
+  if (!hasGmailAccess()) {
+    throw new Error("Gmail access expired. Ask Martin to reconnect Gmail.");
+  }
+  return gmailToken;
+}
+
+export function clearGmailAccess() {
+  gmailToken = "";
+  gmailExpiresAt = 0;
 }
 
 export function loadGoogleIdentity() {
@@ -43,8 +69,8 @@ export function loadGoogleIdentity() {
 }
 
 // Call from a click handler after loadGoogleIdentity() has resolved. Google
-// requires the account chooser to be opened by a direct user gesture.
-export function connectGoogleDrive() {
+// requires each token request to be opened by a direct user gesture.
+function requestGoogleAccess(scope) {
   if (!googleClientId) {
     return Promise.reject(new Error("Google Drive is not configured yet."));
   }
@@ -62,9 +88,7 @@ export function connectGoogleDrive() {
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
-      accessToken = token.access_token;
-      expiresAt = Date.now() + Number(token.expires_in || 3600) * 1000;
-      resolve();
+      resolve(token);
     }
     function fail(error) {
       if (settled) return;
@@ -74,7 +98,7 @@ export function connectGoogleDrive() {
     }
     const client = window.google.accounts.oauth2.initTokenClient({
       client_id: googleClientId,
-      scope: DRIVE_SCOPE,
+      scope,
       callback: (response) => {
         if (response.error || !response.access_token) {
           fail(
@@ -86,7 +110,7 @@ export function connectGoogleDrive() {
         } else if (
           !window.google.accounts.oauth2.hasGrantedAllScopes(
             response,
-            DRIVE_SCOPE,
+            ...scope.split(" "),
           )
         ) {
           fail(new Error("Google Drive access was not granted."));
@@ -103,4 +127,16 @@ export function connectGoogleDrive() {
       fail(error);
     }
   });
+}
+
+export async function connectGoogleDrive() {
+  const token = await requestGoogleAccess(DRIVE_SCOPE);
+  accessToken = token.access_token;
+  expiresAt = Date.now() + Number(token.expires_in || 3600) * 1000;
+}
+
+export async function connectGmail() {
+  const token = await requestGoogleAccess(`${DRIVE_SCOPE} ${GMAIL_SCOPE}`);
+  gmailToken = token.access_token;
+  gmailExpiresAt = Date.now() + Number(token.expires_in || 3600) * 1000;
 }

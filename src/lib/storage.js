@@ -1,3 +1,5 @@
+import { EMAIL_MESSAGES } from "./email.js";
+
 const KEY = "shoot-app";
 
 export const defaults = {
@@ -11,6 +13,7 @@ export const defaults = {
     lang: "en",
     pin: "1234",
     stripeUrl: "",
+    emailMessages: EMAIL_MESSAGES,
   },
   shoots: [],
 };

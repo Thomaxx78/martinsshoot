@@ -35,6 +35,7 @@ export function exportCsv(shoots) {
     "driveFolderId",
     "uploadStatus",
     "uploadedPhotos",
+    "emailStatus",
     "notes",
   ];
   const rows = [

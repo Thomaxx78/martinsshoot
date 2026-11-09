@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { EMAIL_MESSAGES } from "../../lib/email";
 import Field from "./Field";
 
 export default function Settings({ settings, updateDatabase, onLock }) {
@@ -39,6 +40,37 @@ export default function Settings({ settings, updateDatabase, onLock }) {
             value={form.review}
             onChange={(event) => set("review", event.target.value)}
           />
+        </div>
+        <div className="k">
+          <h3>Photo delivery email</h3>
+          <p className="mu small">
+            Choose the message for each language. Use {"{{name}}"},{" "}
+            {"{{shoot}}"}, and {"{{link}}"} where the customer name, shoot name,
+            and Drive link should appear.
+          </p>
+          {[
+            ["en", "English"],
+            ["fr", "Français"],
+            ["es", "Español"],
+          ].map(([language, label]) => (
+            <label key={language}>
+              {label}
+              <textarea
+                rows={5}
+                maxLength={2000}
+                value={
+                  form.emailMessages?.[language] ?? EMAIL_MESSAGES[language]
+                }
+                onChange={(event) =>
+                  set("emailMessages", {
+                    ...EMAIL_MESSAGES,
+                    ...form.emailMessages,
+                    [language]: event.target.value,
+                  })
+                }
+              />
+            </label>
+          ))}
         </div>
         <div className="k">
           <h3>Stripe</h3>

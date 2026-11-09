@@ -31,6 +31,17 @@ Avec l’autorisation limitée `drive.file`, l’app retrouve les dossiers **Sho
 
 Le transfert se fait depuis le navigateur du téléphone : **garder la page ouverte jusqu’à la fin**. Après un rechargement, il faut reconnecter Drive et resélectionner les photos pour un nouveau shooting ; les fichiers sélectionnés ne sont pas stockés localement. Si Drive n’est pas disponible, **Continue without Drive** garde le parcours local et propose de télécharger les photos sur le téléphone.
 
+## Envoyer le lien par e-mail
+
+L’envoi utilise le compte Gmail de Martin (`noplanphotography@gmail.com`), sans domaine d’expédition ni clé Resend. La clé Resend communiquée pour le projet n’est pas utilisée et ne doit pas être ajoutée au dépôt.
+
+1. Dans le **même projet Google Cloud**, activer **Gmail API** dans **API et services > Bibliothèque**.
+2. Dans **Google Auth platform > Data Access**, ajouter le scope `https://www.googleapis.com/auth/gmail.send`. Il autorise uniquement l’envoi d’e-mails, sans lecture de la boîte. L’app étant en mode **Testing**, laisser Martin comme seul utilisateur test.
+3. Avant de passer le téléphone au client, toucher **Connect Google Drive**, puis **Connect Gmail (Martin)** et accepter la nouvelle autorisation. Si Gmail n’est pas connecté, l’upload Drive fonctionne toujours mais l’envoi automatique n’a pas lieu.
+4. Dans **Settings > Photo delivery email**, personnaliser les messages anglais, français et espagnol. Les champs `{{name}}`, `{{shoot}}` et `{{link}}` sont remplacés automatiquement. La langue est sélectionnée selon le pays saisi par le client. Chaque langue dispose de son propre texte ; modifier un texte ne retraduit pas automatiquement les deux autres.
+
+Quand le lien Drive est prêt, l’app envoie l’e-mail directement depuis Gmail, sans ouvrir une autre application. L’état de l’envoi apparaît dans **Customers**. En cas d’erreur ou de doute sur la réponse réseau, l’envoi manuel reste disponible dans le parcours client. Le navigateur doit rester ouvert jusqu’à la fin de l’envoi ; cette version n’a pas de file d’attente persistante.
+
 ```bash
 npm run build   # vérifie et produit dist/
 npm run preview # prévisualise le build

@@ -168,6 +168,11 @@ export default function Customers({ database, updateDatabase }) {
                   {shoot.uploadedPhotos || 0}/{shoot.photos || 0} photos
                 </p>
               )}
+            {shoot.email && shoot.emailStatus && (
+              <p className="mu small">
+                Email: {shoot.emailStatus.replaceAll("_", " ")}
+              </p>
+            )}
             {shoot.status !== "paid" && (
               <button
                 className="b sm s"

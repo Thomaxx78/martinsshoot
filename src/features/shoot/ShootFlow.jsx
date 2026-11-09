@@ -11,12 +11,20 @@ import {
   shootFolderName,
 } from "../../lib/shoots";
 import {
+  clearDriveAccess,
+  clearGmailAccess,
+  connectGmail,
   connectGoogleDrive,
   getDriveAccessToken,
+  getGmailAccessToken,
   googleClientId,
   hasDriveAccess,
+  hasGmailAccess,
   loadGoogleIdentity,
+  martinGoogleEmail,
 } from "../../lib/googleDriveAuth";
+import { deliveryEmail } from "../../lib/email";
+import { sendGmailMessage } from "../../lib/gmail";
 import {
   createShootFolder,
   getDriveAccount,
@@ -47,9 +55,11 @@ export default function ShootFlow({ settings, shoots, onSave, onExit }) {
   const [showQr, setShowQr] = useState(false);
   const [qrImage, setQrImage] = useState("");
   const [driveReady, setDriveReady] = useState(false);
-  const [driveConnected, setDriveConnected] = useState(hasDriveAccess);
+  const [driveConnected, setDriveConnected] = useState(false);
   const [driveAccount, setDriveAccount] = useState("");
   const [driveConnecting, setDriveConnecting] = useState(false);
+  const [gmailConnected, setGmailConnected] = useState(false);
+  const [gmailConnecting, setGmailConnecting] = useState(false);
   const [driveMode, setDriveMode] = useState("auto");
   const [draft, setDraft] = useState(null);
   const [uploadProgress, setUploadProgress] = useState({ file: 0, bytes: 0 });
@@ -58,6 +68,7 @@ export default function ShootFlow({ settings, shoots, onSave, onExit }) {
   const uploadedRef = useRef(new Set());
   const uploadSessionsRef = useRef(new Map());
   const uploadingRef = useRef(false);
+  const emailSendingRef = useRef(false);
   const translation = TRANSLATIONS[language] || TRANSLATIONS.en;
   const stats = contributionStats(shoots);
   const currency = settings.cur;
@@ -106,8 +117,27 @@ export default function ShootFlow({ settings, shoots, onSave, onExit }) {
         if (!active) return;
         setDriveReady(true);
         if (hasDriveAccess()) {
-          const email = await getDriveAccount(getDriveAccessToken());
-          if (active) setDriveAccount(email);
+          try {
+            const email = await getDriveAccount(getDriveAccessToken());
+            if (martinGoogleEmail && email.toLowerCase() !== martinGoogleEmail)
+              throw new Error("Connect Martin’s Google account to use Drive.");
+            if (active) {
+              setDriveAccount(email);
+              setDriveConnected(true);
+            }
+          } catch {
+            clearDriveAccess();
+          }
+        }
+        if (hasGmailAccess()) {
+          try {
+            const email = await getDriveAccount(getGmailAccessToken());
+            if (martinGoogleEmail && email.toLowerCase() !== martinGoogleEmail)
+              throw new Error("Connect Martin’s Google account to use Gmail.");
+            if (active) setGmailConnected(true);
+          } catch {
+            clearGmailAccess();
+          }
         }
       })
       .catch((problem) => {
@@ -127,6 +157,10 @@ export default function ShootFlow({ settings, shoots, onSave, onExit }) {
     try {
       await connectGoogleDrive();
       const email = await getDriveAccount(getDriveAccessToken());
+      if (martinGoogleEmail && email.toLowerCase() !== martinGoogleEmail) {
+        clearDriveAccess();
+        throw new Error("Connect Martin’s Google account to use Drive.");
+      }
       setDriveAccount(email);
       setDriveConnected(true);
     } catch (problem) {
@@ -137,12 +171,59 @@ export default function ShootFlow({ settings, shoots, onSave, onExit }) {
     }
   }
 
+  async function connectMail() {
+    setGmailConnecting(true);
+    setError("");
+    try {
+      await connectGmail();
+      const email = await getDriveAccount(getGmailAccessToken());
+      if (
+        email.toLowerCase() !==
+        (driveAccount || martinGoogleEmail).toLowerCase()
+      ) {
+        clearGmailAccess();
+        throw new Error("Gmail must use the same Google account as Drive.");
+      }
+      setGmailConnected(true);
+    } catch (problem) {
+      setGmailConnected(false);
+      setError(problem.message);
+    } finally {
+      setGmailConnecting(false);
+    }
+  }
+
   function saveDraft(patch) {
     const next = { ...draftRef.current, ...patch };
     if (!onSave(next))
       throw new Error("The shoot could not be saved on this phone.");
     draftRef.current = next;
     setDraft(next);
+  }
+
+  async function sendDeliveryEmail(link) {
+    if (emailSendingRef.current || draftRef.current.emailStatus === "sent")
+      return;
+    emailSendingRef.current = true;
+    try {
+      saveDraft({ emailStatus: "sending" });
+      const message = deliveryEmail(settings, draftRef.current, link);
+      const emailId = await sendGmailMessage(
+        getGmailAccessToken(),
+        draftRef.current.email,
+        message.subject,
+        message.text,
+      );
+      saveDraft({ emailStatus: "sent", emailId });
+    } catch (problem) {
+      try {
+        saveDraft({ emailStatus: "failed", emailError: problem.message });
+      } catch {
+        /* App shows storage errors. */
+      }
+    } finally {
+      emailSendingRef.current = false;
+    }
   }
 
   async function uploadToDrive() {
@@ -179,6 +260,10 @@ export default function ShootFlow({ settings, shoots, onSave, onExit }) {
       saveDraft({ link, uploadStatus: "ready" });
       setCustomer((previous) => ({ ...previous, link }));
       setStep("gallery");
+      if (draftRef.current.email) {
+        if (gmailConnected && hasGmailAccess()) void sendDeliveryEmail(link);
+        else saveDraft({ emailStatus: "not_connected" });
+      }
     } catch (problem) {
       if (problem.status === 401 || !hasDriveAccess()) setDriveConnected(false);
       try {
@@ -225,6 +310,11 @@ export default function ShootFlow({ settings, shoots, onSave, onExit }) {
       driveFolderId: "",
       uploadedPhotos: 0,
       uploadStatus: driveMode === "auto" ? "creating" : "skipped",
+      emailStatus: customer.email.trim()
+        ? driveMode === "auto"
+          ? "waiting_for_photos"
+          : "manual"
+        : "not_provided",
       amount: 0,
       method: "",
       status: "pending",
@@ -328,6 +418,30 @@ export default function ShootFlow({ settings, shoots, onSave, onExit }) {
               in the README before using automatic upload.
             </p>
           )}
+        </div>
+        <div className="k">
+          <h3>Automatic email</h3>
+          <p className="mu small">
+            {gmailConnected && hasGmailAccess()
+              ? `Gmail connected: ${driveAccount}. Customers who add an email will receive the Drive link automatically.`
+              : "Connect Martin’s Gmail to email the Drive link after upload. Drive uploads still work without it."}
+          </p>
+          <button
+            className="b s"
+            disabled={
+              !driveConnected ||
+              !hasDriveAccess() ||
+              !driveReady ||
+              gmailConnecting
+            }
+            onClick={connectMail}
+          >
+            {gmailConnecting
+              ? "Connecting…"
+              : gmailConnected && hasGmailAccess()
+                ? "Reconnect Gmail"
+                : "Connect Gmail (Martin)"}
+          </button>
         </div>
         <button
           className="b"
@@ -524,6 +638,23 @@ export default function ShootFlow({ settings, shoots, onSave, onExit }) {
       <div className="fade">
         {languages}
         <h2>{translation.deliv}</h2>
+        {customer.email && draft?.emailStatus === "sending" && (
+          <p className="mu small" role="status">
+            Sending your email…
+          </p>
+        )}
+        {customer.email && draft?.emailStatus === "sent" && (
+          <p className="mu small" role="status">
+            Email sent to {customer.email}.
+          </p>
+        )}
+        {customer.email &&
+          ["failed", "not_connected"].includes(draft?.emailStatus) && (
+            <p className="mu small" role="status">
+              Automatic email is unavailable. You can send the link manually
+              below.
+            </p>
+          )}
         {canShare && customer.phone && (
           <a
             className="b"
