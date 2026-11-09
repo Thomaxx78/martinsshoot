@@ -40,17 +40,47 @@ async function driveRequest(token, path, options = {}) {
   return response.json();
 }
 
-export async function createShootFolder(token, name) {
+async function findFolder(token, name, parentId) {
+  const escapedName = name.replaceAll("\\", "\\\\").replaceAll("'", "\\'");
+  const query = `name = '${escapedName}' and mimeType = 'application/vnd.google-apps.folder' and '${parentId}' in parents and trashed = false`;
+  let pageToken = "";
+  do {
+    const params = new URLSearchParams({
+      q: query,
+      fields: "nextPageToken,files(id,name)",
+      pageSize: "100",
+    });
+    if (pageToken) params.set("pageToken", pageToken);
+    const result = await driveRequest(token, `/files?${params}`);
+    const folder = result.files?.find((file) => file.name === name && file.id);
+    if (folder) return folder.id;
+    pageToken = result.nextPageToken || "";
+  } while (pageToken);
+  return "";
+}
+
+async function createFolder(token, name, parentId) {
   const folder = await driveRequest(token, "/files?fields=id,name", {
     method: "POST",
     body: JSON.stringify({
       name,
       mimeType: "application/vnd.google-apps.folder",
+      parents: [parentId],
     }),
   });
   if (!folder.id)
     throw new GoogleDriveError("Google Drive did not return a folder ID.");
   return folder.id;
+}
+
+export async function createShootFolder(token, name) {
+  const shootsId =
+    (await findFolder(token, "Shoots", "root")) ||
+    (await createFolder(token, "Shoots", "root"));
+  return (
+    (await findFolder(token, name, shootsId)) ||
+    (await createFolder(token, name, shootsId))
+  );
 }
 
 export async function getDriveAccount(token) {

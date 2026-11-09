@@ -108,6 +108,7 @@ export default function Home({ database, updateDatabase, onNewShoot }) {
           .map((shoot) => (
             <div className="row" key={shoot.id}>
               <span>
+                {shoot.shootName ? `${shoot.shootName} · ` : ""}
                 {shoot.name} · {shoot.date}
               </span>
               <b>

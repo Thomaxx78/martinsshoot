@@ -131,13 +131,14 @@ export default function Customers({ database, updateDatabase }) {
       {shown.length ? (
         shown.map((shoot) => (
           <div className="k" key={shoot.id}>
-            <b>{shoot.name}</b>{" "}
+            <b>{shoot.shootName || shoot.name}</b>{" "}
             <span className="mu">
               {shoot.ref} · {shoot.date}
             </span>
             <br />
             <span className="mu">
-              {shoot.country} · {shoot.phone || ""} {shoot.email || ""}
+              {shoot.name} · {shoot.country} · {shoot.phone || ""}{" "}
+              {shoot.email || ""}
             </span>
             <div className="row">
               <span>

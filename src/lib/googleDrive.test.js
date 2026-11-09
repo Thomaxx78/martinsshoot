@@ -6,7 +6,7 @@ import {
   shareShootFolder,
   uploadShootPhoto,
 } from "./googleDrive.js";
-import { nextShootReference } from "./shoots.js";
+import { nextShootReference, shootFolderName } from "./shoots.js";
 
 const originalFetch = globalThis.fetch;
 afterEach(() => {
@@ -20,19 +20,73 @@ function json(data, status = 200, headers = {}) {
   });
 }
 
-test("creates a real named Drive folder under the connected account", async () => {
+test("creates Shoots at Drive root and the named shoot inside it", async () => {
+  const name = "Eiffel Tower – Alex – 2026-11-09 – REF-000123";
+  const created = [];
   globalThis.fetch = async (url, options) => {
-    assert.match(url, /\/drive\/v3\/files\?fields=id,name$/);
     assert.equal(options.headers.Authorization, "Bearer access-token");
-    assert.deepEqual(JSON.parse(options.body), {
-      name: "Alex – 2026-11-09 – REF-000123",
+    if (options.method === "POST") {
+      const body = JSON.parse(options.body);
+      created.push(body);
+      return json({
+        id: body.name === "Shoots" ? "shoots-root" : "folder-123",
+      });
+    }
+    const query = new URL(url).searchParams.get("q");
+    assert.match(query, /trashed = false/);
+    return json({ files: [] });
+  };
+  assert.equal(await createShootFolder("access-token", name), "folder-123");
+  assert.deepEqual(created, [
+    {
+      name: "Shoots",
       mimeType: "application/vnd.google-apps.folder",
-    });
-    return json({ id: "folder-123", name: "Alex – 2026-11-09 – REF-000123" });
+      parents: ["root"],
+    },
+    {
+      name,
+      mimeType: "application/vnd.google-apps.folder",
+      parents: ["shoots-root"],
+    },
+  ]);
+});
+
+test("reuses the existing Shoots folder and shoot folder on retry", async () => {
+  let creates = 0;
+  globalThis.fetch = async (url, options) => {
+    if (options.method === "POST") creates++;
+    const query = new URL(url).searchParams.get("q");
+    if (query.includes("name = 'Shoots'"))
+      return json({ files: [{ id: "shoots-root", name: "Shoots" }] });
+    assert.match(query, /'shoots-root' in parents/);
+    return json({ files: [{ id: "folder-123", name: "Eiffel Tower" }] });
   };
   assert.equal(
-    await createShootFolder("access-token", "Alex – 2026-11-09 – REF-000123"),
+    await createShootFolder("access-token", "Eiffel Tower"),
     "folder-123",
+  );
+  assert.equal(creates, 0);
+});
+
+test("creates only the shoot folder when Shoots already exists", async () => {
+  const created = [];
+  globalThis.fetch = async (url, options) => {
+    if (options.method === "POST") {
+      created.push(JSON.parse(options.body));
+      return json({ id: "folder-123" });
+    }
+    const query = new URL(url).searchParams.get("q");
+    if (query.includes("name = 'Shoots'"))
+      return json({ files: [{ id: "shoots-root", name: "Shoots" }] });
+    return json({ files: [] });
+  };
+  assert.equal(
+    await createShootFolder("access-token", "Eiffel Tower"),
+    "folder-123",
+  );
+  assert.deepEqual(
+    created.map((folder) => folder.parents),
+    [["shoots-root"]],
   );
 });
 
@@ -185,5 +239,12 @@ test("continues the highest shooting reference instead of reusing deleted number
       { ref: "REF-000123" },
     ]),
     "REF-000124",
+  );
+});
+
+test("uses the photographer's shoot name and customer details for the folder", () => {
+  assert.equal(
+    shootFolderName(" Eiffel Tower ", " Alex ", "2026-11-09", "REF-000123"),
+    "Eiffel Tower – Alex – 2026-11-09 – REF-000123",
   );
 });

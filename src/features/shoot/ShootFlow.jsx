@@ -8,6 +8,7 @@ import {
   languageFor,
   nextShootReference,
   phoneLink,
+  shootFolderName,
 } from "../../lib/shoots";
 import {
   connectGoogleDrive,
@@ -40,6 +41,7 @@ export default function ShootFlow({ settings, shoots, onSave, onExit }) {
   const [language, setLanguage] = useState(settings.lang);
   const [customer, setCustomer] = useState(emptyCustomer);
   const [photos, setPhotos] = useState([]);
+  const [shootName, setShootName] = useState("");
   const [error, setError] = useState("");
   const [showGuide, setShowGuide] = useState(false);
   const [showQr, setShowQr] = useState(false);
@@ -218,7 +220,8 @@ export default function ShootFlow({ settings, shoots, onSave, onExit }) {
       perm: customer.perm,
       photos: photos.length,
       link: driveMode === "auto" ? "" : customer.link.trim(),
-      folder: `${customer.name.trim()} – ${date} – ${ref}`,
+      shootName: shootName.trim(),
+      folder: shootFolderName(shootName, customer.name, date, ref),
       driveFolderId: "",
       uploadedPhotos: 0,
       uploadStatus: driveMode === "auto" ? "creating" : "skipped",
@@ -274,6 +277,17 @@ export default function ShootFlow({ settings, shoots, onSave, onExit }) {
           Choose the edited photos, then hand the phone to the customer.
         </p>
         <label>
+          Shoot name
+          <input
+            value={shootName}
+            onChange={(event) => setShootName(event.target.value)}
+            placeholder="Eiffel Tower sunset"
+            maxLength={80}
+            autoComplete="off"
+            required
+          />
+        </label>
+        <label>
           Edited photos
           <input
             type="file"
@@ -291,7 +305,7 @@ export default function ShootFlow({ settings, shoots, onSave, onExit }) {
             <>
               <p className="mu">
                 {driveConnected && hasDriveAccess()
-                  ? `Connected: ${driveAccount || "Google Drive"}. The folder and photos will be uploaded after the customer form.`
+                  ? `Connected: ${driveAccount || "Google Drive"}. The shoot will be saved inside Shoots after the customer form.`
                   : driveReady
                     ? "Connect Martin’s Google account before handing over the phone."
                     : "Loading Google sign-in…"}
@@ -317,7 +331,12 @@ export default function ShootFlow({ settings, shoots, onSave, onExit }) {
         </div>
         <button
           className="b"
-          disabled={!driveConnected || !hasDriveAccess() || !photos.length}
+          disabled={
+            !driveConnected ||
+            !hasDriveAccess() ||
+            !photos.length ||
+            !shootName.trim()
+          }
           onClick={() => {
             setDriveMode("auto");
             setError("");
@@ -328,7 +347,7 @@ export default function ShootFlow({ settings, shoots, onSave, onExit }) {
         </button>
         <button
           className="b g"
-          disabled={!photos.length}
+          disabled={!photos.length || !shootName.trim()}
           onClick={() => {
             setDriveMode("offline");
             setError("");
