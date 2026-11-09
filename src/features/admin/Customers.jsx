@@ -1,5 +1,19 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { COUNTRIES } from "../../data/countries";
+import { deliveryEmail } from "../../lib/email";
+import { sendGmailMessage } from "../../lib/gmail";
+import { getDriveAccount } from "../../lib/googleDrive";
+import {
+  connectGmail,
+  connectPersistentGoogle,
+  getGmailAccessToken,
+  hasGmailAccess,
+  hasPersistentSession,
+  loadGoogleIdentity,
+  martinGoogleEmail,
+  refreshGoogleSessionIfNeeded,
+  restoreGoogleSession,
+} from "../../lib/googleDriveAuth";
 import { exportCsv, languageFor } from "../../lib/shoots";
 import Field from "./Field";
 
@@ -7,12 +21,90 @@ export default function Customers({ database, updateDatabase }) {
   const [query, setQuery] = useState("");
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(null);
+  const [googleReady, setGoogleReady] = useState(false);
+  const [persistentAvailable, setPersistentAvailable] = useState(false);
+  const [sendingId, setSendingId] = useState(null);
+  const [mailNotice, setMailNotice] = useState(null);
   const shoots = database.shoots;
   const shown = shoots
     .filter((shoot) =>
       JSON.stringify(shoot).toLowerCase().includes(query.toLowerCase()),
     )
     .reverse();
+
+  useEffect(() => {
+    let active = true;
+    Promise.allSettled([loadGoogleIdentity(), restoreGoogleSession()]).then(
+      ([identity, session]) => {
+        if (!active) return;
+        setGoogleReady(identity.status === "fulfilled");
+        setPersistentAvailable(
+          session.status === "fulfilled" && Boolean(session.value.configured),
+        );
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  async function sendShootEmail(shoot) {
+    if (sendingId || !shoot.email || !shoot.link) return;
+    setSendingId(shoot.id);
+    setMailNotice(null);
+    try {
+      if (persistentAvailable) {
+        if (hasPersistentSession()) await refreshGoogleSessionIfNeeded();
+        else await connectPersistentGoogle();
+      } else if (!hasGmailAccess()) {
+        await connectGmail();
+      }
+      const token = getGmailAccessToken();
+      const account = await getDriveAccount(token);
+      if (account.toLowerCase() !== martinGoogleEmail)
+        throw new Error("Connect Martin’s Google account to send email.");
+      if (
+        !updateDatabase((next) => {
+          const item = next.shoots.find((value) => value.id === shoot.id);
+          if (item) item.emailStatus = "sending";
+        })
+      )
+        throw new Error("Could not save email status on this phone.");
+      const message = deliveryEmail(database.settings, shoot, shoot.link);
+      const emailId = await sendGmailMessage(
+        token,
+        shoot.email,
+        message.subject,
+        message.text,
+        martinGoogleEmail,
+      );
+      const saved = updateDatabase((next) => {
+        const item = next.shoots.find((value) => value.id === shoot.id);
+        if (item) {
+          item.emailStatus = "sent";
+          item.emailId = emailId;
+          delete item.emailError;
+        }
+      });
+      setMailNotice({
+        id: shoot.id,
+        text: saved
+          ? "Gmail accepted the email. Check the recipient address and spam folder if it does not arrive."
+          : "Gmail accepted the email, but this phone could not save the result. Do not resend before checking Martin’s Sent folder.",
+      });
+    } catch (problem) {
+      updateDatabase((next) => {
+        const item = next.shoots.find((value) => value.id === shoot.id);
+        if (item && item.emailStatus !== "sent") {
+          item.emailStatus = "failed";
+          item.emailError = problem.message;
+        }
+      });
+      setMailNotice({ id: shoot.id, text: problem.message });
+    } finally {
+      setSendingId(null);
+    }
+  }
 
   function edit(shoot) {
     setEditingId(shoot.id);
@@ -171,7 +263,36 @@ export default function Customers({ database, updateDatabase }) {
             {shoot.email && shoot.emailStatus && (
               <p className="mu small">
                 Email: {shoot.emailStatus.replaceAll("_", " ")}
+                {shoot.emailStatus === "sent" && " (accepted by Gmail)"}
               </p>
+            )}
+            {shoot.emailError && shoot.emailStatus === "failed" && (
+              <p className="mu small" role="alert">
+                {shoot.emailError}
+              </p>
+            )}
+            {mailNotice?.id === shoot.id && (
+              <p className="mu small" role="status">
+                {mailNotice.text}
+              </p>
+            )}
+            {shoot.email && shoot.link && (
+              <button
+                className="b sm s"
+                disabled={
+                  (!googleReady &&
+                    !hasGmailAccess() &&
+                    !hasPersistentSession()) ||
+                  Boolean(sendingId)
+                }
+                onClick={() => void sendShootEmail(shoot)}
+              >
+                {sendingId === shoot.id
+                  ? "Sending…"
+                  : shoot.emailStatus === "sent"
+                    ? "Resend email via Gmail"
+                    : "Send email via Gmail"}
+              </button>
             )}
             {shoot.status !== "paid" && (
               <button

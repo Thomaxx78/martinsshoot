@@ -52,6 +52,30 @@ test("encodes a Unicode subject and body as a valid Gmail raw message", () => {
   );
 });
 
+test("includes Martin as sender and rejects a forged header", () => {
+  const raw = encodeGmailMessage(
+    "alex@example.com",
+    "Your photos",
+    "Here is your link",
+    "noplanphotography@gmail.com",
+  );
+  const mime = Buffer.from(raw, "base64url").toString("utf8");
+  assert.match(
+    mime,
+    /^From: noplanphotography@gmail\.com\r\nTo: alex@example\.com/,
+  );
+  assert.throws(
+    () =>
+      encodeGmailMessage(
+        "alex@example.com",
+        "Your photos",
+        "Here is your link",
+        "martin@example.com\r\nBcc: stranger@example.com",
+      ),
+    /invalid/,
+  );
+});
+
 test("sends via Gmail API and requires a confirmed message ID", async () => {
   globalThis.fetch = async (url, options) => {
     assert.equal(

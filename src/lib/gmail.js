@@ -7,10 +7,15 @@ function base64(bytes) {
   return btoa(binary);
 }
 
-export function encodeGmailMessage(to, subject, text) {
+export function encodeGmailMessage(to, subject, text, from = "") {
   if (to.length > 254 || !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(to)) {
     throw new Error("The customer email address is invalid.");
   }
+  if (
+    from &&
+    (from.length > 254 || !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(from))
+  )
+    throw new Error("The sender email address is invalid.");
   const encoder = new TextEncoder();
   const cleanSubject = subject.replace(/[\r\n]/g, " ");
   const encodedSubject = base64(encoder.encode(cleanSubject));
@@ -19,6 +24,7 @@ export function encodeGmailMessage(to, subject, text) {
       .match(/.{1,76}/g)
       ?.join("\r\n") || "";
   const message = [
+    ...(from ? [`From: ${from}`] : []),
     `To: ${to}`,
     `Subject: =?UTF-8?B?${encodedSubject}?=`,
     "MIME-Version: 1.0",
@@ -33,14 +39,14 @@ export function encodeGmailMessage(to, subject, text) {
     .replace(/=+$/, "");
 }
 
-export async function sendGmailMessage(token, to, subject, text) {
+export async function sendGmailMessage(token, to, subject, text, from = "") {
   const response = await fetch(GMAIL_SEND, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ raw: encodeGmailMessage(to, subject, text) }),
+    body: JSON.stringify({ raw: encodeGmailMessage(to, subject, text, from) }),
   });
   if (!response.ok) {
     let detail = "";

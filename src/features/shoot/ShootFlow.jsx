@@ -244,6 +244,7 @@ export default function ShootFlow({ settings, shoots, onSave, onExit }) {
         draftRef.current.email,
         message.subject,
         message.text,
+        martinGoogleEmail,
       );
       saveDraft({ emailStatus: "sent", emailId });
     } catch (problem) {
