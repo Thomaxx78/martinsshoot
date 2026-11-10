@@ -1,11 +1,5 @@
 node_modules/
 dist/
-android/.gradle/
-android/.idea/
-android/local.properties
-android/**/build/
-android/app/src/main/assets/
-android/capacitor-cordova-android-plugins/
 .DS_Store
 .env
 .env.*

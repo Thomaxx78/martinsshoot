@@ -15,9 +15,38 @@ import {
   refreshGoogleSessionIfNeeded,
 } from "./googleDriveAuth.js";
 import { photoKey, previouslyUploadedIndexes } from "./photoSelection.js";
-import { isNativeAndroid, ShootNative } from "./native.js";
 
 const tasks = new Map();
+const retryDelays = [5_000, 15_000, 45_000, 120_000, 300_000];
+
+function completedBytes(task) {
+  return task.files.reduce(
+    (total, file, index) => total + (task.uploaded.has(index) ? file.size : 0),
+    0,
+  );
+}
+
+function canRetryAutomatically(error) {
+  return (
+    !navigator.onLine ||
+    error instanceof TypeError ||
+    [408, 429, 500, 502, 503, 504].includes(error.status)
+  );
+}
+
+function scheduleRetry(task, error) {
+  const delay = retryDelays[Math.min(task.retryCount, retryDelays.length - 1)];
+  task.retryCount += 1;
+  save(task, {
+    uploadStatus: "retrying",
+    uploadError: error.message || "Connection interrupted.",
+    retryAt: Date.now() + delay,
+  });
+  task.retryTimer = setTimeout(() => {
+    task.retryTimer = null;
+    void run(task);
+  }, delay);
+}
 
 function save(task, patch) {
   if (!task.onPatchShoot(task.shoot.id, patch))
@@ -60,8 +89,16 @@ async function run(task) {
   try {
     await refreshGoogleSessionIfNeeded();
     let token = getDriveAccessToken();
+    const totalBytes = task.files.reduce((total, file) => total + file.size, 0);
+    save(task, {
+      uploadTotalBytes: totalBytes,
+      uploadedBytes: completedBytes(task),
+      retryAt: 0,
+      uploadError: "",
+    });
     let folderId = task.shoot.driveFolderId;
     if (!folderId) {
+      save(task, { uploadStatus: "creating" });
       folderId = await createShootFolder(token, task.shoot.folder);
       save(task, { driveFolderId: folderId, uploadStatus: "sharing" });
     }
@@ -70,22 +107,6 @@ async function run(task) {
       save(task, { link, uploadStatus: "uploading", uploadError: "" });
     } else if (task.shoot.uploadStatus !== "uploading") {
       save(task, { uploadStatus: "uploading", uploadError: "" });
-    }
-    if (isNativeAndroid) {
-      await ShootNative.enqueue({
-        shootId: task.shoot.id,
-        folderId,
-        photos: task.files,
-      });
-      save(task, {
-        uploadStatus: "uploading",
-        uploadError: "",
-        nativeQueued: true,
-      });
-      await sendLink(task);
-      tasks.delete(task.shoot.id);
-      task.files = [];
-      return;
     }
     // The client receives the real shared folder link before large photos
     // begin transferring. Gmail errors do not hold back the Drive upload.
@@ -101,27 +122,41 @@ async function run(task) {
         folderId,
         task.files[index],
         session,
-        () => {},
+        (bytes) => {
+          const uploadedBytes = completedBytes(task) + bytes;
+          if (uploadedBytes !== task.shoot.uploadedBytes)
+            save(task, { uploadedBytes, uploadCurrentFile: index + 1 });
+        },
       );
       task.uploaded.add(index);
+      task.retryCount = 0;
       save(task, {
         uploadedPhotos: task.uploaded.size,
+        uploadedBytes: completedBytes(task),
         uploadedFileKeys: [
           ...(task.shoot.uploadedFileKeys || []),
           photoKey(task.files[index]),
         ],
       });
     }
-    save(task, { uploadStatus: "ready", uploadError: "" });
+    save(task, {
+      uploadStatus: "ready",
+      uploadedBytes: totalBytes,
+      uploadError: "",
+      retryAt: 0,
+    });
     tasks.delete(task.shoot.id);
     task.files = [];
     task.sessions.clear();
   } catch (error) {
     try {
-      save(task, {
-        uploadStatus: "failed",
-        uploadError: error.message || "Google Drive upload failed.",
-      });
+      if (canRetryAutomatically(error)) scheduleRetry(task, error);
+      else
+        save(task, {
+          uploadStatus: "failed",
+          uploadError: error.message || "Google Drive upload failed.",
+          retryAt: 0,
+        });
     } catch {
       // App already reports local storage errors.
     }
@@ -147,6 +182,8 @@ export function startShootUpload({
     uploaded: previouslyUploadedIndexes(shoot, files),
     sessions: new Map(),
     running: false,
+    retryCount: 0,
+    retryTimer: null,
   };
   tasks.set(shoot.id, task);
   void run(task);
@@ -162,13 +199,27 @@ export function isShootUploadRunning(id) {
   return Boolean(tasks.get(id)?.running);
 }
 
+export function hasShootUploadTask(id) {
+  return tasks.has(id);
+}
+
 export function retryShootUpload(id) {
   const task = tasks.get(id);
   if (!task || task.running) return false;
+  if (task.retryTimer) clearTimeout(task.retryTimer);
+  task.retryTimer = null;
   void run(task);
   return true;
 }
 
 export function hasActiveUploads() {
-  return [...tasks.values()].some((task) => task.running);
+  return [...tasks.values()].some((task) => task.running || task.retryTimer);
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("online", () => {
+    for (const task of tasks.values()) {
+      if (task.retryTimer) retryShootUpload(task.shoot.id);
+    }
+  });
 }

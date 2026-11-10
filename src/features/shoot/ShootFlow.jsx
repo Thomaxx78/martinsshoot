@@ -12,7 +12,6 @@ import {
 } from "../../lib/shoots";
 import { startShootUpload } from "../../lib/backgroundUpload";
 import { photoKey } from "../../lib/photoSelection";
-import { isNativeAndroid, nativePhotoUrl, ShootNative } from "../../lib/native";
 import {
   clearDriveAccess,
   clearGmailAccess,
@@ -74,18 +73,12 @@ export default function ShootFlow({
   const set = (key, value) =>
     setCustomer((previous) => ({ ...previous, [key]: value }));
   const photoUrls = useMemo(
-    () =>
-      photos.map((photo) =>
-        isNativeAndroid ? nativePhotoUrl(photo) : URL.createObjectURL(photo),
-      ),
+    () => photos.map((photo) => URL.createObjectURL(photo)),
     [photos],
   );
 
   useEffect(
-    () => () => {
-      if (!isNativeAndroid)
-        photoUrls.forEach((url) => URL.revokeObjectURL(url));
-    },
+    () => () => photoUrls.forEach((url) => URL.revokeObjectURL(url)),
     [photoUrls],
   );
   useEffect(() => {
@@ -174,8 +167,6 @@ export default function ShootFlow({
       setDriveAccount(session.email);
       setDriveConnected(true);
       setGmailConnected(true);
-      if (isNativeAndroid)
-        void ShootNative.requestUploadNotifications().catch(() => {});
     } catch (problem) {
       setError(problem.message);
     } finally {
@@ -228,14 +219,6 @@ export default function ShootFlow({
   function selectPhotos(event) {
     setPhotos(Array.from(event.target.files || []));
   }
-  async function selectNativePhotos() {
-    try {
-      const result = await ShootNative.pickPhotos();
-      if (result.photos?.length) setPhotos(result.photos);
-    } catch (problem) {
-      setError(problem.message || "Could not select photos.");
-    }
-  }
   function submitDetails(event) {
     event.preventDefault();
     if (
@@ -267,6 +250,8 @@ export default function ShootFlow({
       folder: shootFolderName(customer.name, date, ref),
       driveFolderId: "",
       uploadedPhotos: 0,
+      uploadTotalBytes: photos.reduce((total, photo) => total + photo.size, 0),
+      uploadedBytes: 0,
       uploadStatus: driveMode === "auto" ? "creating" : "skipped",
       emailStatus: customer.email.trim()
         ? driveMode === "auto"
@@ -337,21 +322,15 @@ export default function ShootFlow({
         <p className="mu">
           Choose the edited photos, then hand the phone to the customer.
         </p>
-        {isNativeAndroid ? (
-          <button className="b s" onClick={() => void selectNativePhotos()}>
-            Select edited photos
-          </button>
-        ) : (
-          <label>
-            Edited photos
-            <input
-              type="file"
-              accept="image/*"
-              multiple
-              onChange={selectPhotos}
-            />
-          </label>
-        )}
+        <label>
+          Edited photos
+          <input
+            type="file"
+            accept="image/*"
+            multiple
+            onChange={selectPhotos}
+          />
+        </label>
         <p className="mu">
           {photos.length ? `${photos.length} selected` : "No photos selected"}
         </p>
@@ -361,9 +340,7 @@ export default function ShootFlow({
             <>
               <p className="mu">
                 {driveConnected && hasDriveAccess()
-                  ? isNativeAndroid
-                    ? `Connected: ${driveAccount}. Android can resume uploads when the screen is locked.`
-                    : `Connected: ${driveAccount}. Drive and Gmail will reconnect automatically on this phone for about 7 days.`
+                  ? `Connected: ${driveAccount}. Drive and Gmail will reconnect automatically on this phone for about 7 days.`
                   : driveReady
                     ? "Connect Martin’s Google account before handing over the phone."
                     : "Loading Google sign-in…"}
@@ -653,17 +630,16 @@ export default function ShootFlow({
           </p>
         )}
         <div className="download-list">
-          {!isNativeAndroid &&
-            photoUrls.map((url, index) => (
-              <a
-                key={url}
-                className="b sm s"
-                href={url}
-                download={photos[index].name}
-              >
-                Download {index + 1}
-              </a>
-            ))}
+          {photoUrls.map((url, index) => (
+            <a
+              key={url}
+              className="b sm s"
+              href={url}
+              download={photos[index].name}
+            >
+              Download {index + 1}
+            </a>
+          ))}
         </div>
         <button
           className="b"
@@ -672,7 +648,7 @@ export default function ShootFlow({
         >
           {translation.go}
         </button>
-        {linkFailed && (
+        {!canShare && driveMode === "auto" && (
           <button className="b g" onClick={() => setStep("amount")}>
             {translation.linkLater}
           </button>
@@ -857,11 +833,7 @@ export default function ShootFlow({
       <div className="chk">✓</div>
       <h2>{translation.done}</h2>
       {driveMode === "auto" && draft?.uploadStatus !== "ready" && (
-        <p className="mu small">
-          {isNativeAndroid
-            ? "Android continues uploading the photos after the phone is locked. Check the notification for progress."
-            : translation.keepOpen}
-        </p>
+        <p className="mu small">{translation.keepOpen}</p>
       )}
       <button className="b g" onClick={onExit}>
         Dashboard

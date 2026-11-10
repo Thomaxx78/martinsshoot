@@ -2,19 +2,23 @@ import { useEffect, useState } from "react";
 import { COUNTRIES } from "../../data/countries";
 import {
   canRetryShootUpload,
+  hasShootUploadTask,
   isShootUploadRunning,
   retryShootUpload,
   startShootUpload,
 } from "../../lib/backgroundUpload";
 import { matchesShootPhotos } from "../../lib/photoSelection";
-import { isNativeAndroid, ShootNative } from "../../lib/native";
 import { deliveryEmail } from "../../lib/email";
 import { sendGmailMessage } from "../../lib/gmail";
 import { getDriveAccount } from "../../lib/googleDrive";
 import {
+  clearDriveAccess,
   connectGmail,
+  connectGoogleDrive,
   connectPersistentGoogle,
+  getDriveAccessToken,
   getGmailAccessToken,
+  hasDriveAccess,
   hasGmailAccess,
   hasPersistentSession,
   loadGoogleIdentity,
@@ -23,6 +27,7 @@ import {
   restoreGoogleSession,
 } from "../../lib/googleDriveAuth";
 import { exportCsv, languageFor } from "../../lib/shoots";
+import { uploadPercent } from "../../lib/uploadProgress";
 import Field from "./Field";
 
 export default function Customers({ database, updateDatabase }) {
@@ -34,7 +39,13 @@ export default function Customers({ database, updateDatabase }) {
   const [sendingId, setSendingId] = useState(null);
   const [mailNotice, setMailNotice] = useState(null);
   const [uploadNotice, setUploadNotice] = useState(null);
+  const [connectingDrive, setConnectingDrive] = useState(false);
+  const [driveNotice, setDriveNotice] = useState("");
   const shoots = database.shoots;
+  const incompleteUploads = shoots.filter(
+    (shoot) =>
+      shoot.uploadStatus && !["ready", "skipped"].includes(shoot.uploadStatus),
+  );
   const shown = shoots
     .filter((shoot) =>
       JSON.stringify(shoot).toLowerCase().includes(query.toLowerCase()),
@@ -116,6 +127,25 @@ export default function Customers({ database, updateDatabase }) {
     }
   }
 
+  async function reconnectDrive() {
+    setConnectingDrive(true);
+    setDriveNotice("");
+    try {
+      if (persistentAvailable) await connectPersistentGoogle();
+      else await connectGoogleDrive();
+      const account = await getDriveAccount(getDriveAccessToken());
+      if (martinGoogleEmail && account.toLowerCase() !== martinGoogleEmail) {
+        clearDriveAccess();
+        throw new Error("Connect Martin’s Google account to use Drive.");
+      }
+      setDriveNotice(`Drive connected: ${account}. You can resume the upload.`);
+    } catch (problem) {
+      setDriveNotice(problem.message || "Could not connect Google Drive.");
+    } finally {
+      setConnectingDrive(false);
+    }
+  }
+
   function resumeUpload(shoot, event) {
     const files = Array.from(event.target.files || []);
     event.target.value = "";
@@ -123,6 +153,13 @@ export default function Customers({ database, updateDatabase }) {
       setUploadNotice({
         id: shoot.id,
         text: "Select all the original photos from this shoot to resume without duplicates.",
+      });
+      return;
+    }
+    if (!hasDriveAccess() && !hasPersistentSession()) {
+      setUploadNotice({
+        id: shoot.id,
+        text: "Reconnect Martin’s Google account before resuming this upload.",
       });
       return;
     }
@@ -253,6 +290,25 @@ export default function Customers({ database, updateDatabase }) {
         value={query}
         onChange={(event) => setQuery(event.target.value)}
       />
+      {incompleteUploads.length > 0 && !hasDriveAccess() && (
+        <div className="k">
+          <p className="mu small">
+            Reconnect Martin’s Google account to resume Drive transfers.
+          </p>
+          <button
+            className="b sm s"
+            disabled={!googleReady || connectingDrive}
+            onClick={() => void reconnectDrive()}
+          >
+            {connectingDrive ? "Connecting…" : "Reconnect Google Drive"}
+          </button>
+          {driveNotice && (
+            <p className="mu small" role="status">
+              {driveNotice}
+            </p>
+          )}
+        </div>
+      )}
       {shown.length ? (
         shown.map((shoot) => (
           <div className="k" key={shoot.id}>
@@ -286,55 +342,33 @@ export default function Customers({ database, updateDatabase }) {
                 Drive folder (private)
               </a>
             )}
-            {shoot.uploadStatus &&
-              !["ready", "skipped"].includes(shoot.uploadStatus) && (
+            {shoot.uploadStatus && shoot.uploadStatus !== "skipped" && (
+              <div className="upload-item" role="status">
                 <p className="mu small">
-                  Drive upload:{" "}
-                  {isNativeAndroid || isShootUploadRunning(shoot.id)
-                    ? shoot.uploadStatus
-                    : shoot.uploadStatus === "failed"
-                      ? "failed"
-                      : "interrupted"}{" "}
-                  · {shoot.uploadedPhotos || 0}/{shoot.photos || 0} photos
+                  Drive: {uploadPercent(shoot)}% · {shoot.uploadedPhotos || 0}/
+                  {shoot.photos || 0} photos ·{" "}
+                  {shoot.uploadStatus === "ready"
+                    ? "complete"
+                    : hasShootUploadTask(shoot.id)
+                      ? shoot.uploadStatus === "retrying"
+                        ? "retry scheduled"
+                        : shoot.uploadStatus
+                      : "interrupted"}
+                </p>
+                <progress
+                  max="100"
+                  value={uploadPercent(shoot)}
+                  aria-label={`Drive upload for ${shoot.name}`}
+                />
+              </div>
+            )}
+            {shoot.uploadError &&
+              ["failed", "retrying"].includes(shoot.uploadStatus) && (
+                <p className="mu small" role="alert">
+                  {shoot.uploadError}
                 </p>
               )}
-            {shoot.uploadError && shoot.uploadStatus === "failed" && (
-              <p className="mu small" role="alert">
-                {shoot.uploadError}
-              </p>
-            )}
-            {isNativeAndroid &&
-              shoot.uploadStatus === "failed" &&
-              shoot.nativeQueued &&
-              shoot.driveFolderId && (
-                <button
-                  className="b sm s"
-                  onClick={async () => {
-                    try {
-                      await ShootNative.retry({ shootId: shoot.id });
-                      updateDatabase((next) => {
-                        const item = next.shoots.find(
-                          (value) => value.id === shoot.id,
-                        );
-                        if (item) {
-                          item.uploadStatus = "uploading";
-                          item.uploadError = "";
-                        }
-                      });
-                      setUploadNotice({
-                        id: shoot.id,
-                        text: "Android upload resumed.",
-                      });
-                    } catch (problem) {
-                      setUploadNotice({ id: shoot.id, text: problem.message });
-                    }
-                  }}
-                >
-                  Retry Drive upload
-                </button>
-              )}
-            {!isNativeAndroid &&
-              shoot.uploadStatus === "failed" &&
+            {["failed", "retrying"].includes(shoot.uploadStatus) &&
               canRetryShootUpload(shoot.id) && (
                 <button
                   className="b sm s"
@@ -342,16 +376,19 @@ export default function Customers({ database, updateDatabase }) {
                     retryShootUpload(shoot.id);
                     setUploadNotice({
                       id: shoot.id,
-                      text: "Drive upload resumed.",
+                      text: "Drive upload retry started.",
                     });
                   }}
                 >
-                  Retry Drive upload
+                  {shoot.uploadStatus === "retrying"
+                    ? "Retry now"
+                    : "Retry Drive upload"}
                 </button>
               )}
-            {!isNativeAndroid &&
+            {shoot.uploadStatus &&
               !["ready", "skipped"].includes(shoot.uploadStatus) &&
               !isShootUploadRunning(shoot.id) &&
+              !hasShootUploadTask(shoot.id) &&
               !canRetryShootUpload(shoot.id) &&
               shoot.selectedFileKeys?.length > 0 && (
                 <label>

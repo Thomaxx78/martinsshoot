@@ -4,7 +4,6 @@ import Dashboard from "./features/admin/Dashboard";
 import ShootFlow from "./features/shoot/ShootFlow";
 import { loadDatabase, saveDatabase } from "./lib/storage";
 import { hasActiveUploads } from "./lib/backgroundUpload";
-import { isNativeAndroid, ShootNative } from "./lib/native";
 
 export default function App() {
   const [database, setDatabase] = useState(loadDatabase);
@@ -20,63 +19,6 @@ export default function App() {
     };
     window.addEventListener("beforeunload", warnDuringUpload);
     return () => window.removeEventListener("beforeunload", warnDuringUpload);
-  }, []);
-
-  useEffect(() => {
-    if (!isNativeAndroid) return;
-    let active = true;
-    async function syncUploads() {
-      const pending = databaseRef.current.shoots.filter((shoot) =>
-        ["uploading", "failed"].includes(shoot.uploadStatus),
-      );
-      if (!pending.length) return;
-      try {
-        const result = await ShootNative.statuses({
-          shootIds: pending.map((shoot) => shoot.id),
-        });
-        if (!active) return;
-        const changed = pending.some((shoot) => {
-          const status = result.statuses?.[shoot.id];
-          return (
-            status &&
-            ((["ready", "failed"].includes(status.uploadStatus) &&
-              status.uploadStatus !== shoot.uploadStatus) ||
-              (status.uploadedPhotos || 0) > (shoot.uploadedPhotos || 0) ||
-              (status.uploadError || "") !== (shoot.uploadError || ""))
-          );
-        });
-        if (!changed) return;
-        updateDatabase((next) => {
-          for (const shoot of next.shoots) {
-            const status = result.statuses?.[shoot.id];
-            if (!status) continue;
-            if (
-              status.uploadStatus === "ready" ||
-              status.uploadStatus === "failed"
-            )
-              shoot.uploadStatus = status.uploadStatus;
-            shoot.uploadedPhotos = Math.max(
-              shoot.uploadedPhotos || 0,
-              status.uploadedPhotos || 0,
-            );
-            shoot.uploadError = status.uploadError || "";
-          }
-        });
-      } catch {
-        // The native queue will be checked again when the app resumes.
-      }
-    }
-    const interval = setInterval(syncUploads, 5000);
-    const resumed = () => {
-      if (!document.hidden) void syncUploads();
-    };
-    document.addEventListener("visibilitychange", resumed);
-    void syncUploads();
-    return () => {
-      active = false;
-      clearInterval(interval);
-      document.removeEventListener("visibilitychange", resumed);
-    };
   }, []);
 
   function updateDatabase(change) {

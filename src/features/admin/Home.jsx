@@ -1,10 +1,15 @@
 import { REVIEW_MESSAGES } from "../../data/translations";
-import { isShootUploadRunning } from "../../lib/backgroundUpload";
-import { isNativeAndroid } from "../../lib/native";
+import { hasShootUploadTask } from "../../lib/backgroundUpload";
 import { contributionStats, revenue, today } from "../../lib/stats";
+import { uploadPercent } from "../../lib/uploadProgress";
 import { emailLink, phoneLink } from "../../lib/shoots";
 
-export default function Home({ database, updateDatabase, onNewShoot }) {
+export default function Home({
+  database,
+  updateDatabase,
+  onNewShoot,
+  onOpenCustomers,
+}) {
   const { shoots, settings } = database;
   const stats = contributionStats(shoots);
   const currentDate = today();
@@ -22,11 +27,10 @@ export default function Home({ database, updateDatabase, onNewShoot }) {
     (shoot) =>
       shoot.reviewDue && !shoot.reviewSent && Date.now() >= shoot.reviewDue,
   );
-  const uploading = shoots.filter((shoot) =>
-    ["creating", "sharing", "uploading"].includes(shoot.uploadStatus),
-  );
-  const runningUploads = uploading.filter(
-    (shoot) => isNativeAndroid || isShootUploadRunning(shoot.id),
+  const pendingUploads = shoots.filter((shoot) =>
+    ["creating", "sharing", "uploading", "retrying", "failed"].includes(
+      shoot.uploadStatus,
+    ),
   );
   const markReviewSent = (id) =>
     updateDatabase((next) => {
@@ -39,26 +43,42 @@ export default function Home({ database, updateDatabase, onNewShoot }) {
       <button className="b" onClick={onNewShoot}>
         New photo shoot
       </button>
-      {runningUploads.length > 0 && (
+      {pendingUploads.length > 0 && (
         <div className="k" role="status">
-          <b>Drive upload in progress</b>
-          {runningUploads.map((shoot) => (
-            <p className="mu small" key={shoot.id}>
-              {shoot.name}: {shoot.uploadedPhotos || 0}/{shoot.photos || 0}{" "}
-              photos
-            </p>
-          ))}
+          <b>Google Drive transfers</b>
+          {pendingUploads.map((shoot) => {
+            const active = hasShootUploadTask(shoot.id);
+            const percent = uploadPercent(shoot);
+            return (
+              <div className="upload-item" key={shoot.id}>
+                <p className="mu small">
+                  {shoot.name} · {percent}% · {shoot.uploadedPhotos || 0}/
+                  {shoot.photos || 0} photos
+                </p>
+                <progress
+                  max="100"
+                  value={percent}
+                  aria-label={`Drive upload for ${shoot.name}`}
+                />
+                <p className="mu small">
+                  {!active
+                    ? "Interrupted — reselect the original photos in Customers."
+                    : shoot.uploadStatus === "retrying"
+                      ? "Connection interrupted. Automatic retry scheduled; you can also retry now in Customers."
+                      : shoot.uploadStatus === "failed"
+                        ? "Action needed — open Customers."
+                        : "Upload in progress."}
+                </p>
+              </div>
+            );
+          })}
           <p className="mu small">
-            {isNativeAndroid
-              ? "Android continues the transfer with a notification, even when the screen is locked."
-              : "The customer can finish while photos upload. Keep this web app open until the transfer is complete."}
+            Keep this site open on this phone until the transfer is complete. A
+            locked phone may pause the upload.
           </p>
-        </div>
-      )}
-      {!isNativeAndroid && uploading.length > runningUploads.length && (
-        <div className="k" role="alert">
-          A Drive upload was interrupted. Open Customers and reselect its
-          original photos to resume.
+          <button className="b sm s" onClick={onOpenCustomers}>
+            Manage transfers
+          </button>
         </div>
       )}
       <div className="g2">

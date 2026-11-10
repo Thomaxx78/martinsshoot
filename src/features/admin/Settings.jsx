@@ -58,13 +58,14 @@ export default function Settings({
       const saved = updateDatabase((next) => {
         next.settings = { ...defaults.settings, ...backup.settings };
         next.shoots = backup.shoots.map((shoot) =>
-          ["creating", "sharing", "uploading"].includes(shoot.uploadStatus)
+          ["creating", "sharing", "uploading", "retrying"].includes(
+            shoot.uploadStatus,
+          )
             ? {
                 ...shoot,
                 uploadStatus: "failed",
                 uploadError:
-                  "The upload was interrupted during backup transfer. Complete it on the original phone.",
-                nativeQueued: false,
+                  "The upload was interrupted during backup transfer. Reselect the original photos on this phone to resume.",
               }
             : shoot,
         );
@@ -213,10 +214,9 @@ export default function Settings({
         </p>
       </form>
       <div className="k">
-        <h3>Transfer this app to another phone</h3>
+        <h3>Back up this site</h3>
         <p className="mu small">
-          Export shoots and settings from the website, then import this private
-          backup in the Android app. Photos are not included.
+          Export shoots and settings to a private file. Photos are not included.
         </p>
         <button className="b s" onClick={exportBackup}>
           Export backup (JSON)

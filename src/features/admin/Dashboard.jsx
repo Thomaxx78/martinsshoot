@@ -39,6 +39,7 @@ export default function Dashboard({
           database={database}
           updateDatabase={updateDatabase}
           onNewShoot={onNewShoot}
+          onOpenCustomers={() => setTab("customers")}
         />
       )}
       {tab === "customers" && (

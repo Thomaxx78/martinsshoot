@@ -1,5 +1,3 @@
-import { isNativeAndroid, ShootNative } from "./native.js";
-
 const GIS_SCRIPT = "https://accounts.google.com/gsi/client";
 const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
 const GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.send";
@@ -79,16 +77,6 @@ async function sessionRequest(path, options) {
 }
 
 export function restoreGoogleSession() {
-  if (isNativeAndroid) {
-    return ShootNative.session().then((session) => {
-      if (!session.connected) {
-        persistentSession = false;
-        clearDriveAccess();
-        clearGmailAccess();
-      }
-      return { ...session, connected: applySession(session) };
-    });
-  }
   if (!sessionPromise) {
     sessionPromise = sessionRequest("session")
       .then((session) => {
@@ -120,13 +108,6 @@ export function refreshGoogleSessionIfNeeded() {
 }
 
 export async function disconnectPersistentGoogle() {
-  if (isNativeAndroid) {
-    await ShootNative.disconnect();
-    persistentSession = false;
-    clearDriveAccess();
-    clearGmailAccess();
-    return;
-  }
   await sessionRequest("disconnect", {
     method: "POST",
     headers: { "X-Requested-With": "XMLHttpRequest" },
@@ -137,11 +118,6 @@ export async function disconnectPersistentGoogle() {
 }
 
 export function connectPersistentGoogle() {
-  if (isNativeAndroid)
-    return ShootNative.connect().then((session) => {
-      applySession(session);
-      return session;
-    });
   if (!googleClientId || !window.google?.accounts?.oauth2)
     return Promise.reject(new Error("Google sign-in is still loading."));
   return new Promise((resolve, reject) => {
@@ -201,7 +177,6 @@ export function connectPersistentGoogle() {
 }
 
 export function loadGoogleIdentity() {
-  if (isNativeAndroid) return Promise.resolve();
   if (window.google?.accounts?.oauth2) return Promise.resolve();
   if (scriptPromise) return scriptPromise;
   scriptPromise = new Promise((resolve, reject) => {
@@ -284,20 +259,12 @@ function requestGoogleAccess(scope) {
 }
 
 export async function connectGoogleDrive() {
-  if (isNativeAndroid) {
-    await connectPersistentGoogle();
-    return;
-  }
   const token = await requestGoogleAccess(DRIVE_SCOPE);
   accessToken = token.access_token;
   expiresAt = Date.now() + Number(token.expires_in || 3600) * 1000;
 }
 
 export async function connectGmail() {
-  if (isNativeAndroid) {
-    await connectPersistentGoogle();
-    return;
-  }
   const token = await requestGoogleAccess(`${DRIVE_SCOPE} ${GMAIL_SCOPE}`);
   gmailToken = token.access_token;
   gmailExpiresAt = Date.now() + Number(token.expires_in || 3600) * 1000;
