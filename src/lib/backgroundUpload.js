@@ -1,4 +1,5 @@
 import { deliveryEmail } from "./email.js";
+import { acceptedEmailPatch, failedEmailPatch } from "./emailHistory.js";
 import { sendGmailMessage } from "./gmail.js";
 import {
   createShootFolder,
@@ -56,7 +57,11 @@ function save(task, patch) {
 }
 
 async function sendLink(task) {
-  if (!task.shoot.email || task.shoot.emailStatus === "sent") return;
+  if (
+    !task.shoot.email ||
+    ["sent", "failed", "sending", "unknown"].includes(task.shoot.emailStatus)
+  )
+    return;
   if (!hasGmailAccess() && !hasPersistentSession()) {
     save(task, { emailStatus: "not_connected" });
     return;
@@ -77,9 +82,20 @@ async function sendLink(task) {
       martinGoogleEmail,
       message.html,
     );
-    save(task, { emailStatus: "sent", emailId, emailError: "" });
+    save(
+      task,
+      acceptedEmailPatch(task.shoot, task.shoot.email, emailId, "automatic"),
+    );
   } catch (error) {
-    save(task, { emailStatus: "failed", emailError: error.message });
+    save(
+      task,
+      failedEmailPatch(
+        task.shoot,
+        task.shoot.email,
+        error.message || "Gmail could not send the email.",
+        "automatic",
+      ),
+    );
   }
 }
 

@@ -3,6 +3,7 @@ import { hasShootUploadTask } from "../../lib/backgroundUpload";
 import { contributionStats, revenue, today } from "../../lib/stats";
 import { uploadPercent } from "../../lib/uploadProgress";
 import { emailLink, phoneLink } from "../../lib/shoots";
+import EmailHistory from "./EmailHistory";
 
 export default function Home({
   database,
@@ -79,6 +80,7 @@ export default function Home({
                         ? "Action needed — open Customers."
                         : "Upload in progress."}
                 </p>
+                <EmailHistory shoot={shoot} />
               </div>
             );
           })}
@@ -92,7 +94,7 @@ export default function Home({
         </div>
       )}
       <div className="k">
-        <h3>Recent completed Drive uploads</h3>
+        <h3>Recent Drive and email deliveries</h3>
         {recentCompletedUploads.length ? (
           recentCompletedUploads.map((shoot) => (
             <div className="upload-item" key={shoot.id}>
@@ -107,6 +109,7 @@ export default function Home({
                   ? ` · ${new Date(shoot.uploadCompletedAt).toLocaleString()}`
                   : ""}
               </p>
+              <EmailHistory shoot={shoot} />
               {shoot.link && (
                 <a href={shoot.link} target="_blank" rel="noreferrer">
                   Check photos in Drive

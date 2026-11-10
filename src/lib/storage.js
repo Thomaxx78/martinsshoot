@@ -24,7 +24,13 @@ export function loadDatabase() {
     if (saved && typeof saved === "object") {
       return {
         settings: { ...defaults.settings, ...saved.settings },
-        shoots: Array.isArray(saved.shoots) ? saved.shoots : [],
+        shoots: Array.isArray(saved.shoots)
+          ? saved.shoots.map((shoot) =>
+              shoot.emailStatus === "sending"
+                ? { ...shoot, emailStatus: "unknown" }
+                : shoot,
+            )
+          : [],
       };
     }
   } catch {

@@ -9,6 +9,7 @@ import {
 } from "../../lib/backgroundUpload";
 import { matchesShootPhotos } from "../../lib/photoSelection";
 import { deliveryEmail } from "../../lib/email";
+import { acceptedEmailPatch, failedEmailPatch } from "../../lib/emailHistory";
 import { sendGmailMessage } from "../../lib/gmail";
 import { getDriveAccount } from "../../lib/googleDrive";
 import {
@@ -29,6 +30,7 @@ import {
 import { exportCsv, languageFor } from "../../lib/shoots";
 import { uploadPercent } from "../../lib/uploadProgress";
 import Field from "./Field";
+import EmailHistory from "./EmailHistory";
 
 export default function Customers({ database, updateDatabase }) {
   const [query, setQuery] = useState("");
@@ -72,6 +74,7 @@ export default function Customers({ database, updateDatabase }) {
     if (sendingId || !shoot.email || !shoot.link) return;
     setSendingId(shoot.id);
     setMailNotice(null);
+    let acceptedId = "";
     try {
       if (persistentAvailable) {
         if (hasPersistentSession()) await refreshGoogleSessionIfNeeded();
@@ -91,7 +94,7 @@ export default function Customers({ database, updateDatabase }) {
       )
         throw new Error("Could not save email status on this phone.");
       const message = deliveryEmail(database.settings, shoot, shoot.link);
-      const emailId = await sendGmailMessage(
+      acceptedId = await sendGmailMessage(
         token,
         shoot.email,
         message.subject,
@@ -101,11 +104,11 @@ export default function Customers({ database, updateDatabase }) {
       );
       const saved = updateDatabase((next) => {
         const item = next.shoots.find((value) => value.id === shoot.id);
-        if (item) {
-          item.emailStatus = "sent";
-          item.emailId = emailId;
-          delete item.emailError;
-        }
+        if (item)
+          Object.assign(
+            item,
+            acceptedEmailPatch(item, shoot.email, acceptedId, "manual"),
+          );
       });
       setMailNotice({
         id: shoot.id,
@@ -114,11 +117,25 @@ export default function Customers({ database, updateDatabase }) {
           : "Gmail accepted the email, but this phone could not save the result. Do not resend before checking Martin’s Sent folder.",
       });
     } catch (problem) {
+      if (acceptedId) {
+        setMailNotice({
+          id: shoot.id,
+          text: "Gmail accepted the email, but this phone could not save the result. Check Martin’s Sent folder before resending.",
+        });
+        return;
+      }
       updateDatabase((next) => {
         const item = next.shoots.find((value) => value.id === shoot.id);
         if (item && item.emailStatus !== "sent") {
-          item.emailStatus = "failed";
-          item.emailError = problem.message;
+          Object.assign(
+            item,
+            failedEmailPatch(
+              item,
+              shoot.email,
+              problem.message || "Gmail could not send the email.",
+              "manual",
+            ),
+          );
         }
       });
       setMailNotice({ id: shoot.id, text: problem.message });
@@ -406,17 +423,7 @@ export default function Customers({ database, updateDatabase }) {
                 {uploadNotice.text}
               </p>
             )}
-            {shoot.email && shoot.emailStatus && (
-              <p className="mu small">
-                Email: {shoot.emailStatus.replaceAll("_", " ")}
-                {shoot.emailStatus === "sent" && " (accepted by Gmail)"}
-              </p>
-            )}
-            {shoot.emailError && shoot.emailStatus === "failed" && (
-              <p className="mu small" role="alert">
-                {shoot.emailError}
-              </p>
-            )}
+            {shoot.emailStatus && <EmailHistory shoot={shoot} />}
             {mailNotice?.id === shoot.id && (
               <p className="mu small" role="status">
                 {mailNotice.text}
@@ -429,6 +436,7 @@ export default function Customers({ database, updateDatabase }) {
                   (!googleReady &&
                     !hasGmailAccess() &&
                     !hasPersistentSession()) ||
+                  shoot.emailStatus === "sending" ||
                   Boolean(sendingId)
                 }
                 onClick={() => void sendShootEmail(shoot)}
@@ -437,7 +445,9 @@ export default function Customers({ database, updateDatabase }) {
                   ? "Sending…"
                   : shoot.emailStatus === "sent"
                     ? "Resend email via Gmail"
-                    : "Send email via Gmail"}
+                    : shoot.emailStatus === "unknown"
+                      ? "Check Sent, then resend via Gmail"
+                      : "Send email via Gmail"}
               </button>
             )}
             {shoot.status !== "paid" && (

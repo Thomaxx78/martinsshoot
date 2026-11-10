@@ -123,6 +123,20 @@ label {
   height: 12px;
   accent-color: var(--ac);
 }
+.email-history {
+  margin: 8px 0;
+}
+.email-history summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+.email-history ol {
+  padding-left: 22px;
+  font-size: 0.85rem;
+}
+.email-history li {
+  margin: 6px 0;
+}
 .g2 {
   display: grid;
   grid-template-columns: 1fr 1fr;

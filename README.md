@@ -44,7 +44,7 @@ Après le formulaire client, l’app affiche immédiatement les photos locales, 
 
 Le dashboard et **Customers** affichent une barre de progression en octets confirmés par Drive, ainsi que le nombre de photos envoyées. En cas de coupure réseau ou d’erreur temporaire de Drive, le site réessaie automatiquement après 5, 15, 45, puis 120 secondes, et ensuite toutes les 5 minutes tant que la page reste ouverte. **Customers > Retry now** relance immédiatement. Une erreur d’autorisation ou de fichier demande une action de Martin ; **Reconnect Google Drive** et **Retry Drive upload** sont disponibles dans **Customers**.
 
-Le dashboard garde aussi les cinq derniers uploads Drive terminés, avec le nom du client, le nombre de photos confirmé, l’heure de fin et un lien pour vérifier le dossier. Les transferts en cours ou en erreur restent affichés séparément jusqu’à leur résolution. Les séances déjà enregistrées gardent leur état même si elles n’ont pas d’heure de fin historique.
+Le dashboard garde aussi les cinq derniers uploads Drive terminés, avec le nom du client, le nombre de photos confirmé, l’heure de fin et un lien pour vérifier le dossier. L’état de l’e-mail est affiché sur la même fiche, avec son destinataire et l’heure à laquelle Gmail l’a accepté. Chaque tentative d’envoi via Gmail, automatique ou relancée dans **Customers**, réussie ou échouée, s’ajoute à l’historique consultable sur le dashboard et dans **Customers**. Les transferts en cours ou en erreur restent affichés séparément jusqu’à leur résolution. Les séances déjà enregistrées gardent leur état même si elles n’ont pas d’heure de fin ou d’historique d’e-mails antérieur.
 
 Après un rechargement ou une fermeture, le site n’a plus accès aux fichiers sélectionnés. Martin peut resélectionner **toutes les photos d’origine** dans **Customers** ; l’app reprend le même dossier, compare leurs noms, tailles et dates et saute les fichiers déjà confirmés. Les photos et les jetons Google ne sont jamais sauvegardés dans `localStorage`. La progression partielle d’une photo peut être recalculée après une interruption ; il faut vérifier Drive si l’interruption s’est produite juste après la fin d’un fichier.
 
@@ -66,6 +66,8 @@ Quand le lien Drive est prêt, l’app envoie l’e-mail directement depuis Gmai
 L’e-mail envoyé contient une version HTML aux couleurs du site et une version texte de secours. Le message personnalisé dans **Settings** est conservé dans les deux versions, avec un bouton vers le dossier Drive et un lien vers [@martin_flhl](https://www.instagram.com/martin_flhl/).
 
 Dans **Customers**, le bouton **Send email via Gmail** permet de renvoyer le lien d’un shooting déjà créé après avoir connecté le compte de Martin. L’app affiche l’erreur exacte si Gmail refuse l’envoi. L’état **sent** signifie que Gmail a accepté le message, pas que le destinataire l’a reçu ; vérifier l’adresse, les spams et le dossier **Envoyés** de Martin si le message n’arrive pas.
+
+Après une interruption pendant un envoi Gmail, l’état devient **Outcome unknown** au prochain chargement : vérifier le dossier **Envoyés** avant tout renvoi. Une reprise de l’upload Drive ne renvoie pas automatiquement un e-mail dont l’envoi a échoué ou dont le résultat est inconnu.
 
 ```bash
 npm run build   # vérifie et produit dist/
