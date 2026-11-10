@@ -32,6 +32,16 @@ export default function Home({
       shoot.uploadStatus,
     ),
   );
+  const recentCompletedUploads = shoots
+    .map((shoot, index) => ({ shoot, index }))
+    .filter(({ shoot }) => shoot.uploadStatus === "ready")
+    .sort(
+      (a, b) =>
+        (b.shoot.uploadCompletedAt || 0) - (a.shoot.uploadCompletedAt || 0) ||
+        b.index - a.index,
+    )
+    .slice(0, 5)
+    .map(({ shoot }) => shoot);
   const markReviewSent = (id) =>
     updateDatabase((next) => {
       const shoot = next.shoots.find((item) => item.id === id);
@@ -81,6 +91,36 @@ export default function Home({
           </button>
         </div>
       )}
+      <div className="k">
+        <h3>Recent completed Drive uploads</h3>
+        {recentCompletedUploads.length ? (
+          recentCompletedUploads.map((shoot) => (
+            <div className="upload-item" key={shoot.id}>
+              <b>{shoot.name}</b>{" "}
+              <span className="mu small">
+                {shoot.ref} · {shoot.date}
+              </span>
+              <p className="mu small">
+                Upload complete · {shoot.uploadedPhotos || 0}/
+                {shoot.photos || 0} photos
+                {shoot.uploadCompletedAt
+                  ? ` · ${new Date(shoot.uploadCompletedAt).toLocaleString()}`
+                  : ""}
+              </p>
+              {shoot.link && (
+                <a href={shoot.link} target="_blank" rel="noreferrer">
+                  Check photos in Drive
+                </a>
+              )}
+            </div>
+          ))
+        ) : (
+          <p className="mu small">No completed Drive uploads yet.</p>
+        )}
+        <button className="b sm s" onClick={onOpenCustomers}>
+          See all customers
+        </button>
+      </div>
       <div className="g2">
         {summary.map(([label, amount]) => (
           <div className="k" key={label}>

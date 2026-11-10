@@ -44,6 +44,8 @@ Après le formulaire client, l’app affiche immédiatement les photos locales, 
 
 Le dashboard et **Customers** affichent une barre de progression en octets confirmés par Drive, ainsi que le nombre de photos envoyées. En cas de coupure réseau ou d’erreur temporaire de Drive, le site réessaie automatiquement après 5, 15, 45, puis 120 secondes, et ensuite toutes les 5 minutes tant que la page reste ouverte. **Customers > Retry now** relance immédiatement. Une erreur d’autorisation ou de fichier demande une action de Martin ; **Reconnect Google Drive** et **Retry Drive upload** sont disponibles dans **Customers**.
 
+Le dashboard garde aussi les cinq derniers uploads Drive terminés, avec le nom du client, le nombre de photos confirmé, l’heure de fin et un lien pour vérifier le dossier. Les transferts en cours ou en erreur restent affichés séparément jusqu’à leur résolution. Les séances déjà enregistrées gardent leur état même si elles n’ont pas d’heure de fin historique.
+
 Après un rechargement ou une fermeture, le site n’a plus accès aux fichiers sélectionnés. Martin peut resélectionner **toutes les photos d’origine** dans **Customers** ; l’app reprend le même dossier, compare leurs noms, tailles et dates et saute les fichiers déjà confirmés. Les photos et les jetons Google ne sont jamais sauvegardés dans `localStorage`. La progression partielle d’une photo peut être recalculée après une interruption ; il faut vérifier Drive si l’interruption s’est produite juste après la fin d’un fichier.
 
 Avec l’autorisation limitée `drive.file`, l’app retrouve les dossiers **Shoots** qu’elle a elle-même créés. Un dossier **Shoots** créé manuellement dans Drive n’est pas forcément visible pour elle ; dans ce cas, elle peut en créer un second.

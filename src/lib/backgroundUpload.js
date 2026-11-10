@@ -141,6 +141,7 @@ async function run(task) {
     }
     save(task, {
       uploadStatus: "ready",
+      uploadCompletedAt: Date.now(),
       uploadedBytes: totalBytes,
       uploadError: "",
       retryAt: 0,
