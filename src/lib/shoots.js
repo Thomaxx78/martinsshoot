@@ -14,8 +14,8 @@ export function nextShootReference(shoots) {
   return `REF-${String(last + 1).padStart(6, "0")}`;
 }
 
-export function shootFolderName(shootName, customerName, date, ref) {
-  return `${shootName.trim()} – ${customerName.trim()} – ${date} – ${ref}`;
+export function shootFolderName(customerName, date, ref) {
+  return `${customerName.trim()} – ${date} – ${ref}`;
 }
 
 export function exportCsv(shoots) {

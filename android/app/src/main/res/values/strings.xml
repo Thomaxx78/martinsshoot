@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">Shoot Martin</string>
+    <string name="title_activity_main">Shoot Martin</string>
+    <string name="package_name">app.martinsshoot.mobile</string>
+    <string name="custom_url_scheme">app.martinsshoot.mobile</string>
+    <string name="shoot_upload_channel">Photo uploads</string>
+</resources>

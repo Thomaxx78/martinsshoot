@@ -56,6 +56,21 @@ test("renders a branded mobile email while escaping customer text", () => {
   );
 });
 
+test("email sent before upload explains that photos will arrive later", () => {
+  const email = deliveryEmail(
+    {},
+    {
+      lang: "en",
+      name: "Alex",
+      uploadStatus: "uploading",
+    },
+    "https://drive.google.com/drive/folders/folder-123",
+  );
+  assert.match(email.text, /photos are still uploading/i);
+  assert.match(email.html, /Your photo link is ready/);
+  assert.match(email.html, /photos are still uploading/i);
+});
+
 test("encodes a Unicode subject and body as a valid Gmail raw message", () => {
   const raw = encodeGmailMessage(
     "alex@example.com",

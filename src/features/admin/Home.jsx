@@ -1,4 +1,6 @@
 import { REVIEW_MESSAGES } from "../../data/translations";
+import { isShootUploadRunning } from "../../lib/backgroundUpload";
+import { isNativeAndroid } from "../../lib/native";
 import { contributionStats, revenue, today } from "../../lib/stats";
 import { emailLink, phoneLink } from "../../lib/shoots";
 
@@ -20,6 +22,12 @@ export default function Home({ database, updateDatabase, onNewShoot }) {
     (shoot) =>
       shoot.reviewDue && !shoot.reviewSent && Date.now() >= shoot.reviewDue,
   );
+  const uploading = shoots.filter((shoot) =>
+    ["creating", "sharing", "uploading"].includes(shoot.uploadStatus),
+  );
+  const runningUploads = uploading.filter(
+    (shoot) => isNativeAndroid || isShootUploadRunning(shoot.id),
+  );
   const markReviewSent = (id) =>
     updateDatabase((next) => {
       const shoot = next.shoots.find((item) => item.id === id);
@@ -31,6 +39,28 @@ export default function Home({ database, updateDatabase, onNewShoot }) {
       <button className="b" onClick={onNewShoot}>
         New photo shoot
       </button>
+      {runningUploads.length > 0 && (
+        <div className="k" role="status">
+          <b>Drive upload in progress</b>
+          {runningUploads.map((shoot) => (
+            <p className="mu small" key={shoot.id}>
+              {shoot.name}: {shoot.uploadedPhotos || 0}/{shoot.photos || 0}{" "}
+              photos
+            </p>
+          ))}
+          <p className="mu small">
+            {isNativeAndroid
+              ? "Android continues the transfer with a notification, even when the screen is locked."
+              : "The customer can finish while photos upload. Keep this web app open until the transfer is complete."}
+          </p>
+        </div>
+      )}
+      {!isNativeAndroid && uploading.length > runningUploads.length && (
+        <div className="k" role="alert">
+          A Drive upload was interrupted. Open Customers and reselect its
+          original photos to resume.
+        </div>
+      )}
       <div className="g2">
         {summary.map(([label, amount]) => (
           <div className="k" key={label}>

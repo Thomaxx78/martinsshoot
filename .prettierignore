@@ -1,4 +1,7 @@
-node_modules/
-dist/
+android/.gradle/
+android/**/build/
+android/local.properties
+android/gradlew
+android/app/src/main/assets/
+android/capacitor-cordova-android-plugins/
 legacy/
-package-lock.json

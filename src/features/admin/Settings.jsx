@@ -1,8 +1,14 @@
 import { useState } from "react";
 import { EMAIL_MESSAGES } from "../../lib/email";
+import { defaults } from "../../lib/storage";
 import Field from "./Field";
 
-export default function Settings({ settings, updateDatabase, onLock }) {
+export default function Settings({
+  database,
+  settings,
+  updateDatabase,
+  onLock,
+}) {
   const [form, setForm] = useState(settings);
   const [message, setMessage] = useState("");
   const set = (key, value) =>
@@ -19,6 +25,55 @@ export default function Settings({ settings, updateDatabase, onLock }) {
       next.settings = { ...form };
     });
     if (saved) setMessage("Saved.");
+  }
+  function exportBackup() {
+    const blob = new Blob([JSON.stringify(database, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `shoot-martin-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  async function importBackup(file) {
+    if (!file) return;
+    try {
+      if (file.size > 10_000_000) throw new Error("Backup file is too large.");
+      const backup = JSON.parse(await file.text());
+      if (
+        !backup ||
+        typeof backup.settings !== "object" ||
+        !Array.isArray(backup.shoots) ||
+        backup.shoots.some((shoot) => !shoot || typeof shoot.id !== "string")
+      )
+        throw new Error("This is not a Shoot Martin backup.");
+      if (
+        !window.confirm(
+          "Replace all local shoots and settings with this backup?",
+        )
+      )
+        return;
+      const saved = updateDatabase((next) => {
+        next.settings = { ...defaults.settings, ...backup.settings };
+        next.shoots = backup.shoots.map((shoot) =>
+          ["creating", "sharing", "uploading"].includes(shoot.uploadStatus)
+            ? {
+                ...shoot,
+                uploadStatus: "failed",
+                uploadError:
+                  "The upload was interrupted during backup transfer. Complete it on the original phone.",
+                nativeQueued: false,
+              }
+            : shoot,
+        );
+      });
+      if (!saved) throw new Error("Could not save backup on this phone.");
+      window.location.reload();
+    } catch (problem) {
+      setMessage(problem.message || "Could not import backup.");
+    }
   }
   return (
     <>
@@ -157,6 +212,24 @@ export default function Settings({ settings, updateDatabase, onLock }) {
           {message}
         </p>
       </form>
+      <div className="k">
+        <h3>Transfer this app to another phone</h3>
+        <p className="mu small">
+          Export shoots and settings from the website, then import this private
+          backup in the Android app. Photos are not included.
+        </p>
+        <button className="b s" onClick={exportBackup}>
+          Export backup (JSON)
+        </button>
+        <label>
+          Import backup (replaces local data)
+          <input
+            type="file"
+            accept="application/json,.json"
+            onChange={(event) => void importBackup(event.target.files?.[0])}
+          />
+        </label>
+      </div>
       <button
         className="b g"
         onClick={() => {

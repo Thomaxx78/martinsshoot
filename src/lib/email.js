@@ -14,6 +14,9 @@ const EMAIL_LABELS = {
   en: {
     eyebrow: "YOUR PHOTO SHOOT",
     heading: "Your photos are ready.",
+    pendingHeading: "Your photo link is ready.",
+    pendingNote:
+      "The photos are still uploading and will appear in the folder shortly.",
     button: "View my photos",
     backup: "If the button does not open, use this link:",
     signature: "Photographer",
@@ -21,6 +24,9 @@ const EMAIL_LABELS = {
   fr: {
     eyebrow: "VOTRE SHOOTING",
     heading: "Vos photos sont prêtes.",
+    pendingHeading: "Le lien de vos photos est prêt.",
+    pendingNote:
+      "Les photos sont encore en cours d’envoi et apparaîtront bientôt dans le dossier.",
     button: "Voir mes photos",
     backup: "Si le bouton ne s’ouvre pas, utilisez ce lien :",
     signature: "Photographe",
@@ -28,6 +34,9 @@ const EMAIL_LABELS = {
   es: {
     eyebrow: "TU SESIÓN DE FOTOS",
     heading: "Tus fotos están listas.",
+    pendingHeading: "El enlace de tus fotos está listo.",
+    pendingNote:
+      "Las fotos todavía se están subiendo y aparecerán pronto en la carpeta.",
     button: "Ver mis fotos",
     backup: "Si el botón no se abre, usa este enlace:",
     signature: "Fotógrafo",
@@ -59,8 +68,15 @@ function photoUrl(link) {
   return url.toString();
 }
 
-export function renderDeliveryEmailHtml({ language, shoot, text, link }) {
+export function renderDeliveryEmailHtml({
+  language,
+  shoot,
+  text,
+  link,
+  uploading = false,
+}) {
   const labels = EMAIL_LABELS[language] || EMAIL_LABELS.en;
+  const heading = uploading ? labels.pendingHeading : labels.heading;
   const colors = EMAIL_COLORS;
   const safeLink = escapeHtml(link);
   const copy = text
@@ -77,9 +93,9 @@ export function renderDeliveryEmailHtml({ language, shoot, text, link }) {
 
   return `<!doctype html>
 <html lang="${language}">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(labels.heading)}</title></head>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(heading)}</title></head>
 <body style="margin:0;padding:0;background:${colors.background};color:${colors.ink};font-family:Arial,Helvetica,sans-serif;">
-<div style="display:none;font-size:1px;line-height:1px;color:${colors.background};max-height:0;max-width:0;opacity:0;overflow:hidden;">${escapeHtml(labels.heading)} ${escapeHtml(shoot)}</div>
+<div style="display:none;font-size:1px;line-height:1px;color:${colors.background};max-height:0;max-width:0;opacity:0;overflow:hidden;">${escapeHtml(heading)} ${escapeHtml(shoot)}</div>
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:${colors.background};"><tr><td align="center" style="padding:28px 14px;">
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;max-width:560px;background:${colors.surface};border:1px solid ${colors.border};border-radius:18px;overflow:hidden;">
 <tr><td style="background:${colors.green};padding:28px 30px 25px;color:${colors.surface};">
@@ -88,7 +104,7 @@ export function renderDeliveryEmailHtml({ language, shoot, text, link }) {
 </td></tr>
 <tr><td style="padding:34px 30px 30px;">
 <div style="color:${colors.green};font-size:11px;font-weight:bold;letter-spacing:2px;">${escapeHtml(labels.eyebrow)}</div>
-<h1 style="margin:12px 0 10px;color:${colors.ink};font-family:Georgia,serif;font-size:31px;line-height:1.2;font-weight:normal;">${escapeHtml(labels.heading)}</h1>
+<h1 style="margin:12px 0 10px;color:${colors.ink};font-family:Georgia,serif;font-size:31px;line-height:1.2;font-weight:normal;">${escapeHtml(heading)}</h1>
 <div style="color:${colors.muted};font-size:14px;line-height:1.5;">${escapeHtml(shoot)}</div>
 <div style="height:1px;background:${colors.border};margin:24px 0;"></div>
 <div style="color:${colors.ink};font-size:16px;line-height:1.7;">${safeCopy}</div>
@@ -120,17 +136,24 @@ export function deliveryEmail(settings, shoot, link) {
     shoot: shoot.shootName || shoot.name,
     link: safeLink,
   });
-  const instagramSuffix = message.includes(INSTAGRAM_HANDLE)
+  const uploading = ["creating", "sharing", "uploading"].includes(
+    shoot.uploadStatus,
+  );
+  const deliveryMessage = uploading
+    ? `${message}\n\n${EMAIL_LABELS[language].pendingNote}`
+    : message;
+  const instagramSuffix = deliveryMessage.includes(INSTAGRAM_HANDLE)
     ? ""
     : `\n\nInstagram: ${INSTAGRAM_URL}`;
   return {
     subject: `${EMAIL_SUBJECTS[language]} – ${shoot.shootName || shoot.name}`,
-    text: `${message}${instagramSuffix}`,
+    text: `${deliveryMessage}${instagramSuffix}`,
     html: renderDeliveryEmailHtml({
       language,
       shoot: shoot.shootName || shoot.name,
-      text: message,
+      text: deliveryMessage,
       link: safeLink,
+      uploading,
     }),
   };
 }

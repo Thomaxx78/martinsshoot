@@ -16,6 +16,13 @@ export const TRANSLATIONS = {
     all: (n) => `That’s all ${n} photos.`,
     get: "Get your photos",
     deliv: "Your photos are ready to view and download.",
+    linkPending: "Preparing your Google Drive link…",
+    linkUploading: "Your link is ready. Photos are still uploading to Drive.",
+    linkFailed: "The Drive link could not be prepared yet.",
+    linkLater: "Continue without the link",
+    emailAccepted: "Gmail accepted the email for",
+    keepOpen:
+      "The upload continues on this phone. Keep Shoot Martin open until it finishes.",
     swa: "Send via WhatsApp",
     sem: "Send by email",
     sqr: "Show QR code",
@@ -34,6 +41,8 @@ export const TRANSLATIONS = {
     done: "Thank you — enjoy your photos.",
     back: "Back",
     msg: (l) => `Here are your photos: ${l}`,
+    msgPending: (l) =>
+      `Your photo link: ${l}\nThe photos are still uploading and will appear shortly.`,
   },
   fr: {
     ready: "Vos photos sont prêtes.",
@@ -52,6 +61,13 @@ export const TRANSLATIONS = {
     all: (n) => `Voilà les ${n} photos.`,
     get: "Recevoir vos photos",
     deliv: "Vos photos sont prêtes à être vues et téléchargées.",
+    linkPending: "Préparation de votre lien Google Drive…",
+    linkUploading: "Votre lien est prêt. Les photos arrivent encore sur Drive.",
+    linkFailed: "Le lien Drive n’a pas encore pu être préparé.",
+    linkLater: "Continuer sans le lien",
+    emailAccepted: "Gmail a accepté l’e-mail pour",
+    keepOpen:
+      "L’envoi continue sur ce téléphone. Gardez Shoot Martin ouvert jusqu’à la fin.",
     swa: "Envoyer par WhatsApp",
     sem: "Envoyer par e-mail",
     sqr: "Afficher le QR code",
@@ -70,6 +86,8 @@ export const TRANSLATIONS = {
     done: "Merci — profitez de vos photos.",
     back: "Retour",
     msg: (l) => `Voici vos photos : ${l}`,
+    msgPending: (l) =>
+      `Le lien de vos photos : ${l}\nLes photos sont encore en cours d’envoi et apparaîtront bientôt.`,
   },
   es: {
     ready: "Tus fotos están listas.",
@@ -88,6 +106,13 @@ export const TRANSLATIONS = {
     all: (n) => `Esas son las ${n} fotos.`,
     get: "Recibir tus fotos",
     deliv: "Tus fotos están listas para ver y descargar.",
+    linkPending: "Preparando tu enlace de Google Drive…",
+    linkUploading: "Tu enlace está listo. Las fotos siguen subiendo a Drive.",
+    linkFailed: "Todavía no se ha podido preparar el enlace de Drive.",
+    linkLater: "Continuar sin el enlace",
+    emailAccepted: "Gmail aceptó el correo para",
+    keepOpen:
+      "La carga continúa en este teléfono. Mantén Shoot Martin abierto hasta que termine.",
     swa: "Enviar por WhatsApp",
     sem: "Enviar por correo",
     sqr: "Mostrar código QR",
@@ -106,6 +131,8 @@ export const TRANSLATIONS = {
     done: "Gracias — disfruta de tus fotos.",
     back: "Atrás",
     msg: (l) => `Aquí están tus fotos: ${l}`,
+    msgPending: (l) =>
+      `El enlace de tus fotos: ${l}\nLas fotos todavía se están subiendo y aparecerán pronto.`,
   },
 };
 export const REVIEW_MESSAGES = {

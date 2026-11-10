@@ -1,5 +1,13 @@
 import { useEffect, useState } from "react";
 import { COUNTRIES } from "../../data/countries";
+import {
+  canRetryShootUpload,
+  isShootUploadRunning,
+  retryShootUpload,
+  startShootUpload,
+} from "../../lib/backgroundUpload";
+import { matchesShootPhotos } from "../../lib/photoSelection";
+import { isNativeAndroid, ShootNative } from "../../lib/native";
 import { deliveryEmail } from "../../lib/email";
 import { sendGmailMessage } from "../../lib/gmail";
 import { getDriveAccount } from "../../lib/googleDrive";
@@ -25,6 +33,7 @@ export default function Customers({ database, updateDatabase }) {
   const [persistentAvailable, setPersistentAvailable] = useState(false);
   const [sendingId, setSendingId] = useState(null);
   const [mailNotice, setMailNotice] = useState(null);
+  const [uploadNotice, setUploadNotice] = useState(null);
   const shoots = database.shoots;
   const shown = shoots
     .filter((shoot) =>
@@ -105,6 +114,29 @@ export default function Customers({ database, updateDatabase }) {
     } finally {
       setSendingId(null);
     }
+  }
+
+  function resumeUpload(shoot, event) {
+    const files = Array.from(event.target.files || []);
+    event.target.value = "";
+    if (!matchesShootPhotos(shoot, files)) {
+      setUploadNotice({
+        id: shoot.id,
+        text: "Select all the original photos from this shoot to resume without duplicates.",
+      });
+      return;
+    }
+    startShootUpload({
+      shoot,
+      files,
+      settings: database.settings,
+      onPatchShoot: (id, patch) =>
+        updateDatabase((next) => {
+          const item = next.shoots.find((value) => value.id === id);
+          if (item) Object.assign(item, patch);
+        }),
+    });
+    setUploadNotice({ id: shoot.id, text: "Drive upload resumed." });
   }
 
   function edit(shoot) {
@@ -257,10 +289,86 @@ export default function Customers({ database, updateDatabase }) {
             {shoot.uploadStatus &&
               !["ready", "skipped"].includes(shoot.uploadStatus) && (
                 <p className="mu small">
-                  Drive upload: {shoot.uploadStatus} ·{" "}
-                  {shoot.uploadedPhotos || 0}/{shoot.photos || 0} photos
+                  Drive upload:{" "}
+                  {isNativeAndroid || isShootUploadRunning(shoot.id)
+                    ? shoot.uploadStatus
+                    : shoot.uploadStatus === "failed"
+                      ? "failed"
+                      : "interrupted"}{" "}
+                  · {shoot.uploadedPhotos || 0}/{shoot.photos || 0} photos
                 </p>
               )}
+            {shoot.uploadError && shoot.uploadStatus === "failed" && (
+              <p className="mu small" role="alert">
+                {shoot.uploadError}
+              </p>
+            )}
+            {isNativeAndroid &&
+              shoot.uploadStatus === "failed" &&
+              shoot.nativeQueued &&
+              shoot.driveFolderId && (
+                <button
+                  className="b sm s"
+                  onClick={async () => {
+                    try {
+                      await ShootNative.retry({ shootId: shoot.id });
+                      updateDatabase((next) => {
+                        const item = next.shoots.find(
+                          (value) => value.id === shoot.id,
+                        );
+                        if (item) {
+                          item.uploadStatus = "uploading";
+                          item.uploadError = "";
+                        }
+                      });
+                      setUploadNotice({
+                        id: shoot.id,
+                        text: "Android upload resumed.",
+                      });
+                    } catch (problem) {
+                      setUploadNotice({ id: shoot.id, text: problem.message });
+                    }
+                  }}
+                >
+                  Retry Drive upload
+                </button>
+              )}
+            {!isNativeAndroid &&
+              shoot.uploadStatus === "failed" &&
+              canRetryShootUpload(shoot.id) && (
+                <button
+                  className="b sm s"
+                  onClick={() => {
+                    retryShootUpload(shoot.id);
+                    setUploadNotice({
+                      id: shoot.id,
+                      text: "Drive upload resumed.",
+                    });
+                  }}
+                >
+                  Retry Drive upload
+                </button>
+              )}
+            {!isNativeAndroid &&
+              !["ready", "skipped"].includes(shoot.uploadStatus) &&
+              !isShootUploadRunning(shoot.id) &&
+              !canRetryShootUpload(shoot.id) &&
+              shoot.selectedFileKeys?.length > 0 && (
+                <label>
+                  Reselect the original photos to resume Drive upload
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={(event) => resumeUpload(shoot, event)}
+                  />
+                </label>
+              )}
+            {uploadNotice?.id === shoot.id && (
+              <p className="mu small" role="status">
+                {uploadNotice.text}
+              </p>
+            )}
             {shoot.email && shoot.emailStatus && (
               <p className="mu small">
                 Email: {shoot.emailStatus.replaceAll("_", " ")}

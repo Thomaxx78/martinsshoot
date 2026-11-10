@@ -50,6 +50,7 @@ export default function Dashboard({
       {tab === "past" && <AddPast updateDatabase={updateDatabase} />}
       {tab === "settings" && (
         <Settings
+          database={database}
           settings={database.settings}
           updateDatabase={updateDatabase}
           onLock={onLock}

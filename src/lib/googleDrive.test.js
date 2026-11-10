@@ -242,9 +242,9 @@ test("continues the highest shooting reference instead of reusing deleted number
   );
 });
 
-test("uses the photographer's shoot name and customer details for the folder", () => {
+test("uses the customer name and reference for the folder", () => {
   assert.equal(
-    shootFolderName(" Eiffel Tower ", " Alex ", "2026-11-09", "REF-000123"),
-    "Eiffel Tower – Alex – 2026-11-09 – REF-000123",
+    shootFolderName(" Alex ", "2026-11-09", "REF-000123"),
+    "Alex – 2026-11-09 – REF-000123",
   );
 });

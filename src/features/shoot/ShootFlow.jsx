@@ -10,6 +10,9 @@ import {
   phoneLink,
   shootFolderName,
 } from "../../lib/shoots";
+import { startShootUpload } from "../../lib/backgroundUpload";
+import { photoKey } from "../../lib/photoSelection";
+import { isNativeAndroid, nativePhotoUrl, ShootNative } from "../../lib/native";
 import {
   clearDriveAccess,
   clearGmailAccess,
@@ -24,17 +27,9 @@ import {
   hasPersistentSession,
   loadGoogleIdentity,
   martinGoogleEmail,
-  refreshGoogleSessionIfNeeded,
   restoreGoogleSession,
 } from "../../lib/googleDriveAuth";
-import { deliveryEmail } from "../../lib/email";
-import { sendGmailMessage } from "../../lib/gmail";
-import {
-  createShootFolder,
-  getDriveAccount,
-  shareShootFolder,
-  uploadShootPhoto,
-} from "../../lib/googleDrive";
+import { getDriveAccount } from "../../lib/googleDrive";
 import { Histogram } from "../admin/Insights";
 
 const emptyCustomer = {
@@ -48,12 +43,17 @@ const emptyCustomer = {
   link: "",
 };
 
-export default function ShootFlow({ settings, shoots, onSave, onExit }) {
+export default function ShootFlow({
+  settings,
+  shoots,
+  onSave,
+  onPatchShoot,
+  onExit,
+}) {
   const [step, setStep] = useState("hand");
   const [language, setLanguage] = useState(settings.lang);
   const [customer, setCustomer] = useState(emptyCustomer);
   const [photos, setPhotos] = useState([]);
-  const [shootName, setShootName] = useState("");
   const [error, setError] = useState("");
   const [showGuide, setShowGuide] = useState(false);
   const [showQr, setShowQr] = useState(false);
@@ -67,25 +67,25 @@ export default function ShootFlow({ settings, shoots, onSave, onExit }) {
   const [persistentAvailable, setPersistentAvailable] = useState(false);
   const [driveMode, setDriveMode] = useState("auto");
   const [draft, setDraft] = useState(null);
-  const [uploadProgress, setUploadProgress] = useState({ file: 0, bytes: 0 });
   const draftRef = useRef(null);
-  const folderIdRef = useRef("");
-  const uploadedRef = useRef(new Set());
-  const uploadSessionsRef = useRef(new Map());
-  const uploadingRef = useRef(false);
-  const emailSendingRef = useRef(false);
   const translation = TRANSLATIONS[language] || TRANSLATIONS.en;
   const stats = contributionStats(shoots);
   const currency = settings.cur;
   const set = (key, value) =>
     setCustomer((previous) => ({ ...previous, [key]: value }));
   const photoUrls = useMemo(
-    () => photos.map((photo) => URL.createObjectURL(photo)),
+    () =>
+      photos.map((photo) =>
+        isNativeAndroid ? nativePhotoUrl(photo) : URL.createObjectURL(photo),
+      ),
     [photos],
   );
 
   useEffect(
-    () => () => photoUrls.forEach((url) => URL.revokeObjectURL(url)),
+    () => () => {
+      if (!isNativeAndroid)
+        photoUrls.forEach((url) => URL.revokeObjectURL(url));
+    },
     [photoUrls],
   );
   useEffect(() => {
@@ -174,6 +174,8 @@ export default function ShootFlow({ settings, shoots, onSave, onExit }) {
       setDriveAccount(session.email);
       setDriveConnected(true);
       setGmailConnected(true);
+      if (isNativeAndroid)
+        void ShootNative.requestUploadNotifications().catch(() => {});
     } catch (problem) {
       setError(problem.message);
     } finally {
@@ -223,97 +225,16 @@ export default function ShootFlow({ settings, shoots, onSave, onExit }) {
     }
   }
 
-  function saveDraft(patch) {
-    const next = { ...draftRef.current, ...patch };
-    if (!onSave(next))
-      throw new Error("The shoot could not be saved on this phone.");
-    draftRef.current = next;
-    setDraft(next);
-  }
-
-  async function sendDeliveryEmail(link) {
-    if (emailSendingRef.current || draftRef.current.emailStatus === "sent")
-      return;
-    emailSendingRef.current = true;
-    try {
-      saveDraft({ emailStatus: "sending" });
-      await refreshGoogleSessionIfNeeded();
-      const message = deliveryEmail(settings, draftRef.current, link);
-      const emailId = await sendGmailMessage(
-        getGmailAccessToken(),
-        draftRef.current.email,
-        message.subject,
-        message.text,
-        martinGoogleEmail,
-        message.html,
-      );
-      saveDraft({ emailStatus: "sent", emailId });
-    } catch (problem) {
-      try {
-        saveDraft({ emailStatus: "failed", emailError: problem.message });
-      } catch {
-        /* App shows storage errors. */
-      }
-    } finally {
-      emailSendingRef.current = false;
-    }
-  }
-
-  async function uploadToDrive() {
-    if (uploadingRef.current) return;
-    uploadingRef.current = true;
-    setStep("upload");
-    setError("");
-    try {
-      await refreshGoogleSessionIfNeeded();
-      const token = getDriveAccessToken();
-      let folderId = folderIdRef.current;
-      if (!folderId) {
-        folderId = await createShootFolder(token, draftRef.current.folder);
-        folderIdRef.current = folderId;
-        saveDraft({ driveFolderId: folderId, uploadStatus: "uploading" });
-      }
-      for (let index = 0; index < photos.length; index++) {
-        if (uploadedRef.current.has(index)) continue;
-        setUploadProgress({ file: index + 1, bytes: 0 });
-        const session = uploadSessionsRef.current.get(index) || { url: "" };
-        uploadSessionsRef.current.set(index, session);
-        await uploadShootPhoto(
-          token,
-          folderId,
-          photos[index],
-          session,
-          (bytes) => {
-            setUploadProgress({ file: index + 1, bytes });
-          },
-        );
-        uploadedRef.current.add(index);
-        saveDraft({ uploadedPhotos: uploadedRef.current.size });
-      }
-      const link = await shareShootFolder(token, folderId);
-      saveDraft({ link, uploadStatus: "ready" });
-      setCustomer((previous) => ({ ...previous, link }));
-      setStep("gallery");
-      if (draftRef.current.email) {
-        if (gmailConnected && (hasGmailAccess() || hasPersistentSession()))
-          void sendDeliveryEmail(link);
-        else saveDraft({ emailStatus: "not_connected" });
-      }
-    } catch (problem) {
-      if (problem.status === 401 || !hasDriveAccess()) setDriveConnected(false);
-      try {
-        saveDraft({ uploadStatus: "failed" });
-      } catch {
-        /* App shows storage errors. */
-      }
-      setError(problem.message || "Google Drive upload failed. Please retry.");
-    } finally {
-      uploadingRef.current = false;
-    }
-  }
-
   function selectPhotos(event) {
     setPhotos(Array.from(event.target.files || []));
+  }
+  async function selectNativePhotos() {
+    try {
+      const result = await ShootNative.pickPhotos();
+      if (result.photos?.length) setPhotos(result.photos);
+    } catch (problem) {
+      setError(problem.message || "Could not select photos.");
+    }
   }
   function submitDetails(event) {
     event.preventDefault();
@@ -339,15 +260,17 @@ export default function ShootFlow({ settings, shoots, onSave, onExit }) {
       lang: languageFor(customer.country.trim()),
       perm: customer.perm,
       photos: photos.length,
+      selectedFileKeys: photos.map(photoKey),
+      uploadedFileKeys: [],
       link: driveMode === "auto" ? "" : customer.link.trim(),
-      shootName: shootName.trim(),
-      folder: shootFolderName(shootName, customer.name, date, ref),
+      shootName: "",
+      folder: shootFolderName(customer.name, date, ref),
       driveFolderId: "",
       uploadedPhotos: 0,
       uploadStatus: driveMode === "auto" ? "creating" : "skipped",
       emailStatus: customer.email.trim()
         ? driveMode === "auto"
-          ? "waiting_for_photos"
+          ? "waiting_for_link"
           : "manual"
         : "not_provided",
       amount: 0,
@@ -360,8 +283,21 @@ export default function ShootFlow({ settings, shoots, onSave, onExit }) {
     }
     draftRef.current = shoot;
     setDraft(shoot);
-    if (driveMode === "auto") void uploadToDrive();
-    else setStep("gallery");
+    setStep("gallery");
+    if (driveMode === "auto") {
+      startShootUpload({
+        shoot,
+        files: photos,
+        settings,
+        onPatchShoot,
+        onChange: (patch) => {
+          draftRef.current = { ...draftRef.current, ...patch };
+          setDraft(draftRef.current);
+          if (patch.link)
+            setCustomer((previous) => ({ ...previous, link: patch.link }));
+        },
+      });
+    }
   }
   function finish(method = customer.method) {
     if (!draftRef.current) return;
@@ -401,26 +337,21 @@ export default function ShootFlow({ settings, shoots, onSave, onExit }) {
         <p className="mu">
           Choose the edited photos, then hand the phone to the customer.
         </p>
-        <label>
-          Shoot name
-          <input
-            value={shootName}
-            onChange={(event) => setShootName(event.target.value)}
-            placeholder="Eiffel Tower sunset"
-            maxLength={80}
-            autoComplete="off"
-            required
-          />
-        </label>
-        <label>
-          Edited photos
-          <input
-            type="file"
-            accept="image/*"
-            multiple
-            onChange={selectPhotos}
-          />
-        </label>
+        {isNativeAndroid ? (
+          <button className="b s" onClick={() => void selectNativePhotos()}>
+            Select edited photos
+          </button>
+        ) : (
+          <label>
+            Edited photos
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={selectPhotos}
+            />
+          </label>
+        )}
         <p className="mu">
           {photos.length ? `${photos.length} selected` : "No photos selected"}
         </p>
@@ -430,7 +361,9 @@ export default function ShootFlow({ settings, shoots, onSave, onExit }) {
             <>
               <p className="mu">
                 {driveConnected && hasDriveAccess()
-                  ? `Connected: ${driveAccount}. Drive and Gmail will reconnect automatically on this phone for about 7 days.`
+                  ? isNativeAndroid
+                    ? `Connected: ${driveAccount}. Android can resume uploads when the screen is locked.`
+                    : `Connected: ${driveAccount}. Drive and Gmail will reconnect automatically on this phone for about 7 days.`
                   : driveReady
                     ? "Connect Martin’s Google account before handing over the phone."
                     : "Loading Google sign-in…"}
@@ -506,8 +439,7 @@ export default function ShootFlow({ settings, shoots, onSave, onExit }) {
           disabled={
             !driveConnected ||
             (!hasDriveAccess() && !hasPersistentSession()) ||
-            !photos.length ||
-            !shootName.trim()
+            !photos.length
           }
           onClick={() => {
             setDriveMode("auto");
@@ -519,7 +451,7 @@ export default function ShootFlow({ settings, shoots, onSave, onExit }) {
         </button>
         <button
           className="b g"
-          disabled={!photos.length || !shootName.trim()}
+          disabled={!photos.length}
           onClick={() => {
             setDriveMode("offline");
             setError("");
@@ -538,55 +470,6 @@ export default function ShootFlow({ settings, shoots, onSave, onExit }) {
         </button>
       </div>
     );
-
-  if (step === "upload") {
-    const current = photos[uploadProgress.file - 1];
-    const percent = current
-      ? Math.min(100, Math.round((uploadProgress.bytes / current.size) * 100))
-      : 0;
-    return (
-      <div className="fade upload-screen" aria-live="polite">
-        <h2>Preparing your photos</h2>
-        <p className="mu">{draft?.folder}</p>
-        {uploadingRef.current ? (
-          <>
-            <p>
-              {uploadProgress.file
-                ? `Uploading photo ${uploadProgress.file} of ${photos.length} · ${percent}%`
-                : "Creating your Google Drive folder…"}
-            </p>
-            <progress
-              max="100"
-              value={percent}
-              aria-label="Photo upload progress"
-            />
-            <p className="mu small">
-              Keep this page open until the photos are ready.
-            </p>
-          </>
-        ) : (
-          <>
-            <p role="alert">{error || "Upload paused."}</p>
-            <p className="mu small">
-              The existing folder and completed photos will be reused.
-            </p>
-            <button className="b" onClick={() => void uploadToDrive()}>
-              Retry upload
-            </button>
-            {googleClientId && (
-              <button
-                className="b s"
-                disabled={!driveReady || driveConnecting}
-                onClick={persistentAvailable ? connectBoth : connectDrive}
-              >
-                {driveConnecting ? "Connecting…" : "Reconnect Google (Martin)"}
-              </button>
-            )}
-          </>
-        )}
-      </div>
-    );
-  }
 
   if (step === "intro")
     return (
@@ -676,6 +559,8 @@ export default function ShootFlow({ settings, shoots, onSave, onExit }) {
               <img
                 src={url}
                 alt={`Photo ${index + 1} of ${photoUrls.length}`}
+                loading={index === 0 ? "eager" : "lazy"}
+                decoding="async"
               />
             </div>
           ))}
@@ -690,12 +575,32 @@ export default function ShootFlow({ settings, shoots, onSave, onExit }) {
     );
 
   if (step === "delivery") {
-    const message = TRANSLATIONS[language].msg(customer.link);
+    const message =
+      driveMode === "auto" && draft?.uploadStatus !== "ready"
+        ? TRANSLATIONS[language].msgPending(customer.link)
+        : TRANSLATIONS[language].msg(customer.link);
     const canShare = Boolean(customer.link.trim());
+    const waitingForLink =
+      driveMode === "auto" && !canShare && draft?.uploadStatus !== "failed";
+    const linkFailed =
+      driveMode === "auto" && !canShare && draft?.uploadStatus === "failed";
     return (
       <div className="fade">
         {languages}
-        <h2>{translation.deliv}</h2>
+        <h2>
+          {waitingForLink
+            ? translation.linkPending
+            : linkFailed
+              ? translation.linkFailed
+              : canShare && draft?.uploadStatus !== "ready"
+                ? translation.linkUploading
+                : translation.deliv}
+        </h2>
+        {linkFailed && draft?.uploadError && (
+          <p className="mu small" role="alert">
+            {draft.uploadError}
+          </p>
+        )}
         {customer.email && draft?.emailStatus === "sending" && (
           <p className="mu small" role="status">
             Sending your email…
@@ -703,7 +608,7 @@ export default function ShootFlow({ settings, shoots, onSave, onExit }) {
         )}
         {customer.email && draft?.emailStatus === "sent" && (
           <p className="mu small" role="status">
-            Email sent to {customer.email}.
+            {translation.emailAccepted} {customer.email}.
           </p>
         )}
         {customer.email &&
@@ -741,27 +646,37 @@ export default function ShootFlow({ settings, shoots, onSave, onExit }) {
             <img src={qrImage} alt="QR code for photo link" />
           </div>
         )}
-        {!canShare && (
+        {!canShare && driveMode !== "auto" && (
           <p className="mu">
             No Drive link was added. Download the photos here and share them
             manually.
           </p>
         )}
         <div className="download-list">
-          {photoUrls.map((url, index) => (
-            <a
-              key={url}
-              className="b sm s"
-              href={url}
-              download={photos[index].name}
-            >
-              Download {index + 1}
-            </a>
-          ))}
+          {!isNativeAndroid &&
+            photoUrls.map((url, index) => (
+              <a
+                key={url}
+                className="b sm s"
+                href={url}
+                download={photos[index].name}
+              >
+                Download {index + 1}
+              </a>
+            ))}
         </div>
-        <button className="b" onClick={() => setStep("amount")}>
+        <button
+          className="b"
+          disabled={waitingForLink || linkFailed}
+          onClick={() => setStep("amount")}
+        >
           {translation.go}
         </button>
+        {linkFailed && (
+          <button className="b g" onClick={() => setStep("amount")}>
+            {translation.linkLater}
+          </button>
+        )}
       </div>
     );
   }
@@ -941,6 +856,13 @@ export default function ShootFlow({ settings, shoots, onSave, onExit }) {
     <div className="c end-screen">
       <div className="chk">✓</div>
       <h2>{translation.done}</h2>
+      {driveMode === "auto" && draft?.uploadStatus !== "ready" && (
+        <p className="mu small">
+          {isNativeAndroid
+            ? "Android continues uploading the photos after the phone is locked. Check the notification for progress."
+            : translation.keepOpen}
+        </p>
+      )}
       <button className="b g" onClick={onExit}>
         Dashboard
       </button>
