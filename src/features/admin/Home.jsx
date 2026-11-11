@@ -4,6 +4,7 @@ import { contributionStats, revenue, today } from "../../lib/stats";
 import { uploadPercent } from "../../lib/uploadProgress";
 import { emailLink, phoneLink } from "../../lib/shoots";
 import EmailHistory from "./EmailHistory";
+import DeliveryHistory from "./DeliveryHistory";
 
 export default function Home({
   database,
@@ -33,16 +34,6 @@ export default function Home({
       shoot.uploadStatus,
     ),
   );
-  const recentCompletedUploads = shoots
-    .map((shoot, index) => ({ shoot, index }))
-    .filter(({ shoot }) => shoot.uploadStatus === "ready")
-    .sort(
-      (a, b) =>
-        (b.shoot.uploadCompletedAt || 0) - (a.shoot.uploadCompletedAt || 0) ||
-        b.index - a.index,
-    )
-    .slice(0, 5)
-    .map(({ shoot }) => shoot);
   const markReviewSent = (id) =>
     updateDatabase((next) => {
       const shoot = next.shoots.find((item) => item.id === id);
@@ -55,36 +46,56 @@ export default function Home({
         New photo shoot
       </button>
       {pendingUploads.length > 0 && (
-        <div className="k" role="status">
-          <b>Google Drive transfers</b>
+        <div className="k live-transfers" role="status">
+          <div className="live-transfers__header">
+            <span className="live-transfers__mark" aria-hidden="true">
+              ↑
+            </span>
+            <div>
+              <strong>Google Drive transfers</strong>
+              <span>Follow each shoot until it finishes</span>
+            </div>
+            <span className="delivery-pill delivery-pill--neutral">
+              {pendingUploads.length} to check
+            </span>
+          </div>
           {pendingUploads.map((shoot) => {
             const active = hasShootUploadTask(shoot.id);
             const percent = uploadPercent(shoot);
             return (
-              <div className="upload-item" key={shoot.id}>
-                <p className="mu small">
-                  {shoot.name} · {percent}% · {shoot.uploadedPhotos || 0}/
-                  {shoot.photos || 0} photos
-                </p>
+              <div className="live-transfers__item" key={shoot.id}>
+                <div className="live-transfers__item-top">
+                  <strong>{shoot.name}</strong>
+                  <b>{percent}%</b>
+                </div>
+                <span className="delivery-entry__meta">
+                  {shoot.uploadedPhotos || 0}/{shoot.photos || 0} photos
+                </span>
                 <progress
                   max="100"
                   value={percent}
                   aria-label={`Drive upload for ${shoot.name}`}
                 />
                 <p className="mu small">
-                  {!active
-                    ? "Interrupted — reselect the original photos in Customers."
-                    : shoot.uploadStatus === "retrying"
-                      ? "Connection interrupted. Automatic retry scheduled; you can also retry now in Customers."
-                      : shoot.uploadStatus === "failed"
-                        ? "Action needed — open Customers."
+                  {shoot.uploadStatus === "failed"
+                    ? "Action needed — open Customers to resume."
+                    : !active
+                      ? "Interrupted — reselect the original photos in Customers."
+                      : shoot.uploadStatus === "retrying"
+                        ? "Connection interrupted. Automatic retry scheduled; you can also retry now in Customers."
                         : "Upload in progress."}
                 </p>
+                {shoot.uploadError &&
+                  ["failed", "retrying"].includes(shoot.uploadStatus) && (
+                    <p className="live-transfers__error" role="alert">
+                      {shoot.uploadError}
+                    </p>
+                  )}
                 <EmailHistory shoot={shoot} />
               </div>
             );
           })}
-          <p className="mu small">
+          <p className="live-transfers__note">
             Keep this site open on this phone until the transfer is complete. A
             locked phone may pause the upload.
           </p>
@@ -93,37 +104,6 @@ export default function Home({
           </button>
         </div>
       )}
-      <div className="k">
-        <h3>Recent Drive and email deliveries</h3>
-        {recentCompletedUploads.length ? (
-          recentCompletedUploads.map((shoot) => (
-            <div className="upload-item" key={shoot.id}>
-              <b>{shoot.name}</b>{" "}
-              <span className="mu small">
-                {shoot.ref} · {shoot.date}
-              </span>
-              <p className="mu small">
-                Upload complete · {shoot.uploadedPhotos || 0}/
-                {shoot.photos || 0} photos
-                {shoot.uploadCompletedAt
-                  ? ` · ${new Date(shoot.uploadCompletedAt).toLocaleString()}`
-                  : ""}
-              </p>
-              <EmailHistory shoot={shoot} />
-              {shoot.link && (
-                <a href={shoot.link} target="_blank" rel="noreferrer">
-                  Check photos in Drive
-                </a>
-              )}
-            </div>
-          ))
-        ) : (
-          <p className="mu small">No completed Drive uploads yet.</p>
-        )}
-        <button className="b sm s" onClick={onOpenCustomers}>
-          See all customers
-        </button>
-      </div>
       <div className="g2">
         {summary.map(([label, amount]) => (
           <div className="k" key={label}>
@@ -213,6 +193,7 @@ export default function Home({
       ) : (
         <p className="mu">No shoots yet. Start one above or add past shoots.</p>
       )}
+      <DeliveryHistory shoots={shoots} onOpenCustomers={onOpenCustomers} />
     </>
   );
 }
